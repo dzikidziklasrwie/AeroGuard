@@ -7,43 +7,12 @@ namespace AeroGuard.Api.Data;
 
 public sealed class ArchiveRepository
 {
-    private readonly string _databasePath;
-    private readonly string _schemaPath;
-    private readonly string _connectionString;
+    private readonly ISqliteConnectionFactory _connectionFactory;
 
-    public ArchiveRepository(string databasePath, string schemaPath)
+    public ArchiveRepository(ISqliteConnectionFactory connectionFactory)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
-        ArgumentException.ThrowIfNullOrWhiteSpace(schemaPath);
-
-        _databasePath = Path.GetFullPath(databasePath);
-        _schemaPath = Path.GetFullPath(schemaPath);
-        _connectionString = new SqliteConnectionStringBuilder
-        {
-            DataSource = _databasePath,
-            Mode = SqliteOpenMode.ReadWriteCreate,
-            Cache = SqliteCacheMode.Shared,
-            ForeignKeys = true,
-            Pooling = true,
-        }.ToString();
-    }
-
-    public async Task InitializeAsync(CancellationToken cancellationToken = default)
-    {
-        if (!File.Exists(_schemaPath))
-        {
-            throw new FileNotFoundException("The database schema file was not found.", _schemaPath);
-        }
-
-        var parentDirectory = Path.GetDirectoryName(_databasePath)
-            ?? throw new InvalidOperationException("The database path has no parent directory.");
-        Directory.CreateDirectory(parentDirectory);
-
-        var schema = await File.ReadAllTextAsync(_schemaPath, cancellationToken);
-        await using var connection = await OpenConnectionAsync(cancellationToken);
-        await using var command = connection.CreateCommand();
-        command.CommandText = schema;
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        ArgumentNullException.ThrowIfNull(connectionFactory);
+        _connectionFactory = connectionFactory;
     }
 
     public async Task<ImportDisposition> ImportAsync(
@@ -52,7 +21,7 @@ public sealed class ArchiveRepository
     {
         ArgumentNullException.ThrowIfNull(run);
 
-        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
 
         await using (var existingCommand = connection.CreateCommand())
@@ -146,7 +115,7 @@ public sealed class ArchiveRepository
 
     public async Task<long> CountRunsAsync(CancellationToken cancellationToken = default)
     {
-        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = "SELECT COUNT(*) FROM runs;";
         var result = await command.ExecuteScalarAsync(cancellationToken);
@@ -159,7 +128,7 @@ public sealed class ArchiveRepository
         int limit,
         CancellationToken cancellationToken = default)
     {
-        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         var sql = new StringBuilder(
             """
@@ -192,7 +161,7 @@ public sealed class ArchiveRepository
     public async Task<IReadOnlyList<StoredRun>> GetLatestScenarioRunsAsync(
         CancellationToken cancellationToken = default)
     {
-        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
@@ -221,7 +190,7 @@ public sealed class ArchiveRepository
         long id,
         CancellationToken cancellationToken = default)
     {
-        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText =
             """
@@ -242,7 +211,7 @@ public sealed class ArchiveRepository
         long id,
         CancellationToken cancellationToken = default)
     {
-        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = "SELECT replay_bytes FROM runs WHERE id = $id LIMIT 1;";
         command.Parameters.AddWithValue("$id", id);
@@ -257,7 +226,7 @@ public sealed class ArchiveRepository
     {
         ArgumentNullException.ThrowIfNull(filter);
 
-        await using var connection = await OpenConnectionAsync(cancellationToken);
+        await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         var sql = new StringBuilder(
             """
@@ -349,21 +318,4 @@ public sealed class ArchiveRepository
             reader.GetInt64(11),
             DateTimeOffset.Parse(reader.GetString(12), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind));
 
-    private async Task<SqliteConnection> OpenConnectionAsync(CancellationToken cancellationToken)
-    {
-        var connection = new SqliteConnection(_connectionString);
-        try
-        {
-            await connection.OpenAsync(cancellationToken);
-            await using var command = connection.CreateCommand();
-            command.CommandText = "PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;";
-            await command.ExecuteNonQueryAsync(cancellationToken);
-            return connection;
-        }
-        catch
-        {
-            await connection.DisposeAsync();
-            throw;
-        }
-    }
 }
