@@ -1,0 +1,14 @@
+{
+  "name": "recovery-after-temporary-failure",
+  "description": "A 1.5-second communication outage triggers a fault, a recovery hold and a return to normal.",
+  "duration_ms": 8000,
+  "faults": [
+    {
+      "type": "missing_telemetry",
+      "subsystem": "communication",
+      "start_ms": 2000,
+      "duration_ms": 1500,
+      "magnitude": 1.0
+    }
+  ]
+}
