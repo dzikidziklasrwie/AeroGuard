@@ -53,7 +53,7 @@ jobs:
             --seed 42
 
       - name: Upload native build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: native-${{ matrix.os }}
           path: |
@@ -63,7 +63,7 @@ jobs:
 
       - name: Upload generated replay data
         if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: simulator-replays
           path: demo-output/
@@ -149,7 +149,7 @@ jobs:
         run: npm run build
 
       - name: Upload dashboard bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dashboard-dist
           path: frontend/dist/
@@ -181,7 +181,7 @@ jobs:
 
       - name: Upload API test report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: backend-test-report
           path: backend/**/TestResults/backend-tests.trx
