@@ -15,7 +15,7 @@ Snapshot date: 2026-11-19
 | JSONL/manifest producer-consumer contract | C++ export, seven authentic replays, parser, and manifest | All seven generated files loaded without parser warnings |
 | ASP.NET Core API, SQLite, accounts, and fleet access | Minimal API, archive importer, bearer sessions, roles, aircraft assignments, and audit records | Release build, format check, and 31/31 xUnit integration tests passed |
 | Documentation and CV material | User manual, requirements, design, build, tests, trade-offs, interview notes, and measured CV copy | Cross-checked against the current code and results |
-| Windows/Linux GitHub Actions | Workflow defines MSVC, GCC, sanitizers, clang-tidy, frontend, backend, and Docker jobs | No hosted run observed yet |
+| Windows/Linux GitHub Actions | Workflow defines MSVC, GCC, sanitizers, clang-tidy, frontend, backend, and Docker jobs | Feature-branch run `44619482612` passed every job |
 | Multi-stage Docker demo | Simulator data generation, .NET API, React build, nginx, and SQLite volume | Non-root API image and integrated stack built; archive, login, and HTTP smoke checks passed |
 | Portfolio visuals | Generated hero plus real dashboard capture and provenance | Production dashboard captured at 1600 x 1200 |
 
@@ -65,9 +65,9 @@ Snapshot date: 2026-11-19
 - [x] `dotnet format --verify-no-changes`: no changes reported.
 - [x] Build the multi-stage API/dashboard images and run archive, login, and
   HTTP smoke checks.
-- [ ] Windows MSVC GitHub Actions job observed passing.
-- [ ] Linux GCC GitHub Actions job observed passing.
-- [ ] Frontend, backend, sanitizer, analysis, and Docker GitHub Actions jobs
+- [x] Windows MSVC GitHub Actions job observed passing.
+- [x] Linux GCC GitHub Actions job observed passing.
+- [x] Frontend, backend, sanitizer, analysis, and Docker GitHub Actions jobs
   observed passing.
 - [ ] Fresh-clone README walkthrough of the published revision.
 
@@ -82,7 +82,7 @@ Snapshot date: 2026-11-19
 | Frontend | Node 24.13.1 and npm 11.8.0; the locked install, ESLint, TypeScript, 25/25 Vitest tests in 7 files, and Vite production build passed. `npm audit` reported 0 vulnerabilities. |
 | Backend | .NET 10 Release build and 31/31 xUnit integration tests passed; `dotnet format --verify-no-changes` reported no changes. |
 | Docker | The non-root API image built, imported all seven replays, reported ready, and accepted the configured administrator login. Compose started the API, SQLite volume, nginx proxy, and dashboard; the root page and API proxy smoke checks passed. |
+| GitHub Actions | [Feature-branch run `44619482612`](https://github.com/dzikidziklasrwie/AeroGuard/actions/runs/44619482612) completed successfully with MSVC, GCC, ASan/UBSan, clang-tidy, frontend, API, and Docker jobs. |
 | Visual review | Headless Chrome captured the production container at 1600 x 1200 after replay data loaded. |
 
-This snapshot has no observed GitHub-hosted workflow result. We don't claim a
-coverage percentage.
+We don't claim a coverage percentage.
