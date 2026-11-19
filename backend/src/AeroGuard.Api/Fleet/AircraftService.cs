@@ -230,13 +230,21 @@ public sealed class AircraftService(
         }
 
         var now = timeProvider.GetUtcNow();
-        var assignment = await aircraftRepository.UpsertAssignmentAsync(
-            aircraftId,
-            userId,
-            accessLevel,
-            actor.Id,
-            now,
-            cancellationToken);
+        AircraftAssignmentRecord assignment;
+        try
+        {
+            assignment = await aircraftRepository.UpsertAssignmentAsync(
+                aircraftId,
+                userId,
+                accessLevel,
+                actor.Id,
+                now,
+                cancellationToken);
+        }
+        catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
+        {
+            throw ApiProblemException.Conflict("Assign another owner before changing the final owner.");
+        }
         await auditRepository.AppendAsync(
             actor.Id,
             "aircraft.assignment.set",
@@ -266,7 +274,20 @@ public sealed class AircraftService(
             throw ApiProblemException.Conflict("Assign another owner before removing the final owner.");
         }
 
-        if (!await aircraftRepository.DeleteAssignmentAsync(aircraftId, userId, cancellationToken))
+        bool deleted;
+        try
+        {
+            deleted = await aircraftRepository.DeleteAssignmentAsync(
+                aircraftId,
+                userId,
+                cancellationToken);
+        }
+        catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
+        {
+            throw ApiProblemException.Conflict("Assign another owner before removing the final owner.");
+        }
+
+        if (!deleted)
         {
             throw ApiProblemException.NotFound("The aircraft assignment does not exist.");
         }

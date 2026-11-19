@@ -97,6 +97,11 @@ public sealed class AccessAndAircraftEndpointTests(AeroGuardApiFactory factory)
                 password = "Viewer-Password-42!",
                 roles = new[] { "Viewer" },
             });
+        using var retainAdmin = await SendAuthorizedJsonAsync(
+            HttpMethod.Put,
+            $"/api/admin/users/{login.UserId}/roles",
+            login.Token,
+            new { roles = new[] { "Admin", "Viewer" } });
         using var removeAdmin = await SendAuthorizedJsonAsync(
             HttpMethod.Put,
             $"/api/admin/users/{login.UserId}/roles",
@@ -111,6 +116,7 @@ public sealed class AccessAndAircraftEndpointTests(AeroGuardApiFactory factory)
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
         Assert.Equal(username, createdBody.GetProperty("username").GetString());
         Assert.Equal(HttpStatusCode.Conflict, duplicate.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, retainAdmin.StatusCode);
         Assert.Equal(HttpStatusCode.Conflict, removeAdmin.StatusCode);
         Assert.Equal(HttpStatusCode.Conflict, deactivateSelf.StatusCode);
     }
@@ -291,6 +297,25 @@ public sealed class AccessAndAircraftEndpointTests(AeroGuardApiFactory factory)
 
         Assert.Equal(HttpStatusCode.Conflict, duplicate.StatusCode);
         Assert.Equal(HttpStatusCode.Conflict, removeFinalOwner.StatusCode);
+    }
+
+    [Fact]
+    public async Task AdminCanDeleteAircraftAndItsOwnerAssignment()
+    {
+        var admin = await LoginAsync("admin", "Test-Admin-Password-42!");
+        var aircraft = await CreateAircraftAsync(admin.Token, UniqueTail());
+        var aircraftId = aircraft.GetProperty("id").GetInt64();
+        using var delete = await SendAuthorizedAsync(
+            HttpMethod.Delete,
+            $"/api/aircraft/{aircraftId}",
+            admin.Token);
+        using var detail = await SendAuthorizedAsync(
+            HttpMethod.Get,
+            $"/api/aircraft/{aircraftId}",
+            admin.Token);
+
+        Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, detail.StatusCode);
     }
 
     [Fact]

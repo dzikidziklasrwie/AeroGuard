@@ -461,22 +461,13 @@ public sealed class IdentityRepository(
         bool deleteExisting,
         CancellationToken cancellationToken)
     {
-        if (deleteExisting)
-        {
-            await using var delete = connection.CreateCommand();
-            delete.Transaction = transaction;
-            delete.CommandText = "DELETE FROM user_roles WHERE user_id = $user_id;";
-            delete.Parameters.AddWithValue("$user_id", userId);
-            await delete.ExecuteNonQueryAsync(cancellationToken);
-        }
-
         foreach (var role in roles)
         {
             await using var insert = connection.CreateCommand();
             insert.Transaction = transaction;
             insert.CommandText =
                 """
-                INSERT INTO user_roles (user_id, role_id, assigned_at_utc)
+                INSERT OR IGNORE INTO user_roles (user_id, role_id, assigned_at_utc)
                 SELECT $user_id, id, $assigned_at_utc
                 FROM roles
                 WHERE name = $role_name COLLATE NOCASE;
@@ -484,10 +475,50 @@ public sealed class IdentityRepository(
             insert.Parameters.AddWithValue("$user_id", userId);
             insert.Parameters.AddWithValue("$assigned_at_utc", Format(now));
             insert.Parameters.AddWithValue("$role_name", role);
-            if (await insert.ExecuteNonQueryAsync(cancellationToken) != 1)
+            await insert.ExecuteNonQueryAsync(cancellationToken);
+            await using var verify = connection.CreateCommand();
+            verify.Transaction = transaction;
+            verify.CommandText =
+                """
+                SELECT 1
+                FROM user_roles
+                JOIN roles ON roles.id = user_roles.role_id
+                WHERE user_roles.user_id = $user_id
+                  AND roles.name = $role_name COLLATE NOCASE
+                LIMIT 1;
+                """;
+            verify.Parameters.AddWithValue("$user_id", userId);
+            verify.Parameters.AddWithValue("$role_name", role);
+            if (await verify.ExecuteScalarAsync(cancellationToken) is null)
             {
                 throw new InvalidOperationException($"Role '{role}' no longer exists.");
             }
+        }
+
+        if (deleteExisting)
+        {
+            await using var delete = connection.CreateCommand();
+            delete.Transaction = transaction;
+            var parameters = roles
+                .Select((_, index) => $"$role_{index}")
+                .ToArray();
+            delete.CommandText =
+                $"""
+                DELETE FROM user_roles
+                WHERE user_id = $user_id
+                  AND role_id NOT IN (
+                      SELECT id
+                      FROM roles
+                      WHERE name IN ({string.Join(", ", parameters)})
+                  );
+                """;
+            delete.Parameters.AddWithValue("$user_id", userId);
+            foreach (var (role, index) in roles.Select((value, index) => (value, index)))
+            {
+                delete.Parameters.AddWithValue($"$role_{index}", role);
+            }
+
+            await delete.ExecuteNonQueryAsync(cancellationToken);
         }
     }
 
