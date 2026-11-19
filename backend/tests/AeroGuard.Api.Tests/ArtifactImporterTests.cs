@@ -122,10 +122,11 @@ public sealed class ArtifactImporterTests : IDisposable
             RepositoryPaths.Root,
             "backend",
             "schema.sql");
-        var repository = new ArchiveRepository(
-            Path.Combine(_temporaryDirectory, databaseFile),
-            schemaPath);
-        await repository.InitializeAsync(CancellationToken);
+        var connectionFactory = new SqliteConnectionFactory(
+            Path.Combine(_temporaryDirectory, databaseFile));
+        var initializer = new DatabaseInitializer(connectionFactory, schemaPath);
+        await initializer.InitializeAsync(CancellationToken);
+        var repository = new ArchiveRepository(connectionFactory);
         return repository;
     }
 }
