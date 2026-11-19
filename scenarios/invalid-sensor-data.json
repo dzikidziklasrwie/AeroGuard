@@ -1,0 +1,14 @@
+{
+  "name": "invalid-sensor-data",
+  "description": "A temperature sensor reports out-of-range values for 1.8 seconds, then recovers.",
+  "duration_ms": 8000,
+  "faults": [
+    {
+      "type": "invalid_telemetry",
+      "subsystem": "temperature",
+      "start_ms": 2000,
+      "duration_ms": 1800,
+      "magnitude": 1.0
+    }
+  ]
+}
