@@ -93,8 +93,16 @@ public sealed class AccountAdministrationService(
         }
 
         var now = timeProvider.GetUtcNow();
-        var updated = await repository.ReplaceRolesAsync(userId, roles, now, cancellationToken)
-            ?? throw ApiProblemException.NotFound("The user does not exist.");
+        UserAccount updated;
+        try
+        {
+            updated = await repository.ReplaceRolesAsync(userId, roles, now, cancellationToken)
+                ?? throw ApiProblemException.NotFound("The user does not exist.");
+        }
+        catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
+        {
+            throw ApiProblemException.Conflict("The last active administrator must keep the Admin role.");
+        }
         await auditRepository.AppendAsync(
             actor.Id,
             "user.roles.replace",
@@ -129,8 +137,16 @@ public sealed class AccountAdministrationService(
         }
 
         var now = timeProvider.GetUtcNow();
-        var updated = await repository.SetUserStatusAsync(userId, request.IsActive, now, cancellationToken)
-            ?? throw ApiProblemException.NotFound("The user does not exist.");
+        UserAccount updated;
+        try
+        {
+            updated = await repository.SetUserStatusAsync(userId, request.IsActive, now, cancellationToken)
+                ?? throw ApiProblemException.NotFound("The user does not exist.");
+        }
+        catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
+        {
+            throw ApiProblemException.Conflict("The last active administrator cannot be deactivated.");
+        }
         await auditRepository.AppendAsync(
             actor.Id,
             "user.status.update",

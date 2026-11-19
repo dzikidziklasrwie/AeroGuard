@@ -134,6 +134,85 @@ CREATE INDEX IF NOT EXISTS idx_aircraft_status
 CREATE INDEX IF NOT EXISTS idx_audit_log_occurred
     ON audit_log(occurred_at_utc DESC, id DESC);
 
+CREATE TRIGGER IF NOT EXISTS protect_last_active_admin_role
+BEFORE DELETE ON user_roles
+WHEN EXISTS (
+        SELECT 1
+        FROM roles
+        WHERE roles.id = OLD.role_id
+          AND roles.name = 'Admin' COLLATE NOCASE
+    )
+    AND EXISTS (
+        SELECT 1
+        FROM users
+        WHERE users.id = OLD.user_id
+          AND users.is_active = 1
+    )
+    AND (
+        SELECT COUNT(DISTINCT users.id)
+        FROM users
+        JOIN user_roles ON user_roles.user_id = users.id
+        JOIN roles ON roles.id = user_roles.role_id
+        WHERE users.is_active = 1
+          AND roles.name = 'Admin' COLLATE NOCASE
+    ) <= 1
+BEGIN
+    SELECT RAISE(ABORT, 'the final active administrator must keep the Admin role');
+END;
+
+CREATE TRIGGER IF NOT EXISTS protect_last_active_admin_status
+BEFORE UPDATE OF is_active ON users
+WHEN OLD.is_active = 1
+    AND NEW.is_active = 0
+    AND EXISTS (
+        SELECT 1
+        FROM user_roles
+        JOIN roles ON roles.id = user_roles.role_id
+        WHERE user_roles.user_id = OLD.id
+          AND roles.name = 'Admin' COLLATE NOCASE
+    )
+    AND (
+        SELECT COUNT(DISTINCT users.id)
+        FROM users
+        JOIN user_roles ON user_roles.user_id = users.id
+        JOIN roles ON roles.id = user_roles.role_id
+        WHERE users.is_active = 1
+          AND roles.name = 'Admin' COLLATE NOCASE
+    ) <= 1
+BEGIN
+    SELECT RAISE(ABORT, 'the final active administrator cannot be deactivated');
+END;
+
+CREATE TRIGGER IF NOT EXISTS protect_last_aircraft_owner_delete
+BEFORE DELETE ON aircraft_assignments
+WHEN OLD.access_level = 'OWNER'
+    AND EXISTS (
+        SELECT 1 FROM aircraft WHERE aircraft.id = OLD.aircraft_id
+    )
+    AND (
+        SELECT COUNT(*)
+        FROM aircraft_assignments
+        WHERE aircraft_id = OLD.aircraft_id
+          AND access_level = 'OWNER'
+    ) <= 1
+BEGIN
+    SELECT RAISE(ABORT, 'the final aircraft owner cannot be removed');
+END;
+
+CREATE TRIGGER IF NOT EXISTS protect_last_aircraft_owner_update
+BEFORE UPDATE OF access_level ON aircraft_assignments
+WHEN OLD.access_level = 'OWNER'
+    AND NEW.access_level <> 'OWNER'
+    AND (
+        SELECT COUNT(*)
+        FROM aircraft_assignments
+        WHERE aircraft_id = OLD.aircraft_id
+          AND access_level = 'OWNER'
+    ) <= 1
+BEGIN
+    SELECT RAISE(ABORT, 'the final aircraft owner cannot be changed');
+END;
+
 INSERT OR IGNORE INTO roles (name, description, is_system, created_at_utc)
 VALUES
     ('Admin', 'Manages accounts, roles, aircraft, and assignments.', 1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
