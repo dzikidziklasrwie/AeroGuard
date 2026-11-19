@@ -1,0 +1,56 @@
+services:
+  api:
+    build:
+      context: .
+      target: api
+    image: aeroguard-api:local
+    environment:
+      AEROGUARD_ADMIN_USERNAME: ${AEROGUARD_ADMIN_USERNAME:-admin}
+      AEROGUARD_ADMIN_PASSWORD: ${AEROGUARD_ADMIN_PASSWORD:?Set AEROGUARD_ADMIN_PASSWORD in .env}
+      AEROGUARD_SESSION_HOURS: ${AEROGUARD_SESSION_HOURS:-8}
+    ports:
+      - "8081:8080"
+    volumes:
+      - type: volume
+        source: aeroguard-data
+        target: /data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8080/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  dashboard:
+    build:
+      context: .
+      target: dashboard
+    image: aeroguard-dashboard:local
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+
+  simulator:
+    profiles: ["tools"]
+    build:
+      context: .
+      target: simulator
+    image: aeroguard-simulator:local
+    command:
+      - --export-all
+      - /data
+      - --scenarios-dir
+      - /opt/aeroguard/scenarios
+      - --seed
+      - "42"
+    volumes:
+      - type: bind
+        source: ./demo-output
+        target: /data
+
+volumes:
+  aeroguard-data:
