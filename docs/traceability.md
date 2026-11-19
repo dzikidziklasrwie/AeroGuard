@@ -15,9 +15,12 @@ These statuses come from commands run on 2026-11-19:
   format --verify-no-changes` reported no changes.
 - The non-root Docker API image built, imported seven runs, reported ready, and
   accepted the configured administrator login.
+- GitHub Actions run
+  [`44619482612`](https://github.com/dzikidziklasrwie/AeroGuard/actions/runs/44619482612)
+  passed the MSVC, GCC, sanitizer, clang-tidy, frontend, API, and Docker jobs.
 
-`Verified locally` does not mean that GitHub Actions has passed. A hosted run
-is reported only after its status is observed on the published revision.
+`Verified locally` records direct command evidence. `Verified in hosted CI`
+means the published feature-branch run completed successfully.
 
 | Requirement | Automated or review evidence | Level | Status |
 |---|---|---|---|
@@ -49,9 +52,9 @@ is reported only after its status is observed on the published revision.
 | REQ-026 | `usePlayback` fake-timer test covers automatic start, end-to-start looping, and reset on dataset change; App test covers run selection | Frontend hook/component | Verified locally |
 | REQ-027 | App test checks statistics, architecture, and enabled report control; `buildSimulationReport` validates report content | Frontend component/unit | Verified locally |
 | REQ-028 | Malformed/unknown/missing-metadata parser cases; App manifest-error and retry test | Frontend unit/component | Verified locally |
-| REQ-029 | Local MSVC and containerized GCC strict builds and 44-test runs; CI matrix definition | Portability/CI | Verified locally; hosted CI unobserved |
-| REQ-030 | Local native, frontend, and .NET checks, 44-test ASan/UBSan run, Clang 18 clang-tidy build, and corresponding CI jobs | Analysis/CI | Verified locally; hosted CI unobserved |
-| REQ-031 | Multi-stage Docker builds, seven generated replays, non-root API health/login check, Compose configuration, and dashboard/API proxy smoke test | Docker | Verified locally; hosted CI unobserved |
+| REQ-029 | Local MSVC and containerized GCC strict builds and 44-test runs; CI matrix definition | Portability/CI | Verified locally and in hosted CI |
+| REQ-030 | Local native, frontend, and .NET checks, 44-test ASan/UBSan run, Clang 18 clang-tidy build, and corresponding CI jobs | Analysis/CI | Verified locally and in hosted CI |
+| REQ-031 | Multi-stage Docker builds, seven generated replays, non-root API health/login check, Compose configuration, and dashboard/API proxy smoke test | Docker | Verified locally and in hosted CI |
 | REQ-032 | README and user-manual disclaimers, dashboard boundary notice, and production-browser review | Documentation/UI review | Verified locally |
 | REQ-033 | `ArtifactImporterTests` cover first import, idempotent repeat, tamper rejection, and rollback; API factory imports a new temporary database | .NET integration | Verified locally |
 | REQ-034 | `ApiEndpointTests` cover scenarios, run queries, replay bytes, ordered/filtered records, validation, OpenAPI, and missing resources | .NET HTTP integration | Verified locally |
@@ -64,5 +67,5 @@ is reported only after its status is observed on the published revision.
 | REQ-041 | `AuditLogRecordsAuthenticatedChanges` checks login and aircraft-create audit entries | .NET HTTP integration | Verified locally |
 | REQ-042 | API-client tests cover scenario/run REST selection and static fallback; workspace review confirms no browser persistence API | Frontend unit/component/review | Verified locally |
 
-[TASKS.md](../TASKS.md) records the detailed commands, versions, and remaining
-hosted checks.
+[TASKS.md](../TASKS.md) records the detailed commands, versions, and hosted
+run link.

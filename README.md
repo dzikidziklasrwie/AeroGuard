@@ -78,8 +78,10 @@ Observed locally on 2026-11-19:
 | Docker API | Non-root image built; archive reported seven runs and administrator login succeeded |
 | Docker stack | API, SQLite volume, nginx proxy, and dashboard smoke check described in `TASKS.md` |
 
-The repository includes a GitHub Actions workflow, but no hosted runner has
-completed it yet. We don't claim a coverage percentage. [TASKS.md](TASKS.md)
+GitHub Actions run
+[`44619482612`](https://github.com/dzikidziklasrwie/AeroGuard/actions/runs/44619482612)
+passed the MSVC, GCC, sanitizer, clang-tidy, frontend, API, and Docker jobs on
+the feature branch. We don't claim a coverage percentage. [TASKS.md](TASKS.md)
 records the full command evidence.
 
 ## Run the demo
