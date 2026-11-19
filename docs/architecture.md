@@ -1,0 +1,288 @@
+# Architecture
+
+## System context
+
+AeroGuard is a local full-stack educational simulation. A C++20 producer makes
+each health decision once and writes versioned JSON Lines. An ASP.NET Core API
+validates and archives those artifacts in SQLite. React presents recorded
+results and provides an authenticated workspace for accounts and aircraft.
+Neither the API nor React recalculates subsystem health.
+
+```mermaid
+flowchart LR
+    Reviewer([Reviewer])
+    Admin([Administrator])
+    User([Operator / viewer])
+    Scenario[(Fictional scenario JSON)]
+    Core[[C++20 AeroGuard simulator]]
+    Replay[(Schema v1 JSONL + manifest)]
+    Importer[[Validated artifact importer]]
+    Database[(SQLite archive and access data)]
+    API[[ASP.NET Core REST API]]
+    UI[[React dashboard and workspace]]
+    Report[(Downloaded report)]
+
+    Reviewer -->|selects scenario, seed, clock| Core
+    Scenario -->|fault schedule and limits| Core
+    Core -->|authoritative health records| Replay
+    Replay --> Importer
+    Importer --> Database
+    Database <--> API
+    API <--> UI
+    Replay -. static fallback .-> UI
+    Reviewer -->|automatic replay and filters| UI
+    Admin -->|users, roles, assignments| UI
+    User -->|assigned aircraft| UI
+    UI -->|derived presentation summary| Report
+```
+
+The aircraft and subsystems are fictional. There is no connection to an
+aircraft, bus, operational network, or proprietary platform.
+
+## C++ component model
+
+```mermaid
+flowchart TB
+    CLI[CLI / configuration parser]
+    Catalog[Scenario catalog]
+    Engine[Deterministic simulation engine]
+    Clock[ISimulationClock]
+    HAL[Simulated HAL]
+    Models[Six subsystem models]
+    Queue[BoundedQueue of typed telemetry]
+    Validator[Telemetry validation]
+    Monitor[Health monitor]
+    FSM[System state machine]
+    Logger[JSONL logger]
+
+    CLI --> Catalog
+    CLI --> Engine
+    Catalog --> Engine
+    Clock --> Engine
+    Engine --> HAL
+    HAL --> Models
+    Models --> Queue
+    Queue --> Validator
+    Validator --> Monitor
+    Monitor --> FSM
+    Engine --> Logger
+    Validator --> Logger
+    Monitor --> Logger
+    FSM --> Logger
+```
+
+| Area | Responsibility | Boundary |
+|---|---|---|
+| `include/aeroguard`, `src/core` | Domain types, telemetry validation, and allowed state transitions | No UI or file-discovery policy |
+| `src/diagnostics` | Per-subsystem snapshots, heartbeat tracking, aggregate health, and recovery timing | Consumes validated domain records |
+| `src/hal` | Fictional hardware-facing interface and simulated implementation | Core tests use the simulated HAL instead of hardware |
+| `src/simulation` | Virtual clock, seeded subsystem generation, scenario timing, orchestration | No wall-clock delay required |
+| `src/logging` | Versioned JSONL serialization and manifest/output handling | Presentation-neutral contract |
+| `src/main.cpp` | CLI parsing, composition root, process exit policy | Owns user-facing exception boundary |
+| `frontend/src/data` | Strict schema-v1 parsing and recoverable diagnostics | Does not infer new system health |
+| `frontend/src/hooks` | Automatic replay cursor and run-reset timing | Source records remain immutable |
+| `frontend/src/components` | Engineering dashboard presentation | Reads parsed records only |
+| `backend/src/AeroGuard.Api/Import` | Validate manifest and JSONL, then import each artifact once | Rejects unsafe paths and contract mismatches |
+| `backend/src/AeroGuard.Api/Endpoints` | HTTP route definitions and DTO responses | Delegates permission and data rules |
+| `backend/src/AeroGuard.Api/Identity` | Password checks, bearer sessions, role and account rules | Never returns password or token hashes |
+| `backend/src/AeroGuard.Api/Fleet` | Aircraft visibility, assignments, versions, and audit | Does not contain simulation health policy |
+| `backend/src/AeroGuard.Api/Data` | SQLite connection and schema initialization | All values pass through parameters |
+
+## One simulation tick
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant E as Simulator
+    participant C as Manual clock
+    participant H as Simulated HAL/subsystems
+    participant Q as Bounded queue
+    participant V as Validator/health monitor
+    participant S as State machine
+    participant L as JSONL logger
+
+    E->>C: read virtual timestamp
+    E->>H: sample each fictional subsystem
+    H-->>Q: typed telemetry messages
+    loop until queue is empty
+        E->>Q: pop message
+        Q-->>V: immutable telemetry value
+        V->>V: validate and update heartbeat/health
+        V-->>L: telemetry and diagnostic records
+    end
+    E->>V: evaluate missing heartbeats
+    V->>S: aggregate observation
+    S-->>L: accepted transition, if state changed
+    E->>C: advance one configured tick
+```
+
+The engine executes this path synchronously to keep record ordering
+reproducible. `BoundedQueue` owns fixed-capacity storage and internal
+synchronization. If a future producer thread uses the queue, queue indices and
+shared mutable state remain private. The reference engine omits concurrency
+because extra threads don't demonstrate the health policy.
+
+## State and fault policy
+
+The health monitor tracks the most recent validated observation for every
+subsystem and heartbeat age in virtual time. It produces an aggregate
+observation; the state machine alone validates state edges. This separates
+measurement rules from transition rules and makes both independently testable.
+
+See the complete [state-machine specification](state-machine.md), including
+the invalid-transition matrix.
+
+## Data contract
+
+Each output line is one JSON object with these base fields:
+
+```json
+{"schema_version":1,"record_type":"telemetry","timestamp_ms":1000}
+```
+
+The record variants are:
+
+| `record_type` | Additional contract |
+|---|---|
+| `metadata` | `scenario`, `description`, `seed`, `tick_ms`, `duration_ms`, `subsystems` |
+| `telemetry` | `sequence`, `subsystem`, `health`, `valid`, `reason`, `data` |
+| `event` | `severity`, `event_code`, nullable `subsystem`, `message` |
+| `state_transition` | `from`, `to`, `reason`, `severity` |
+| `summary` | scenario/seed/final state and tick, telemetry, invalid, heartbeat, dropped-message, transition counts |
+
+The logger writes metadata first and summary last. Intermediate records retain
+simulation order. The dashboard reports unknown record types and unsupported
+schema versions as parse diagnostics. It doesn't interpret them silently.
+
+`--export-all` also writes `manifest.json`, which lists generated replay files
+for the dashboard. The manifest indexes files; JSONL contains the detailed
+events.
+
+```json
+{
+  "schema_version": 1,
+  "generated_by": "AeroGuard",
+  "scenarios": [
+    {
+      "id": "normal-operation",
+      "label": "Normal operation",
+      "description": "All six fictional subsystems remain within nominal operating limits.",
+      "file": "normal-operation.jsonl",
+      "duration_ms": 8000,
+      "tick_ms": 100,
+      "final_state": "NORMAL"
+    }
+  ]
+}
+```
+
+The `scenarios` entries include recorded duration, tick, and final state. The
+dashboard identifies a replay through `id`, `label`, `description`, and `file`.
+
+## Archive and REST flow
+
+Startup creates the SQLite schema, imports the seven packaged artifacts, and
+uses each source SHA-256 value as the idempotency key. One transaction stores a
+run, its ordered records, and the original replay bytes. Public read routes
+return run metadata, filtered records, or the unchanged JSONL content.
+
+```mermaid
+sequenceDiagram
+    participant S as API startup
+    participant I as Artifact importer
+    participant D as SQLite
+    participant B as Browser
+
+    S->>I: initialize archive
+    I->>I: validate manifest, path, schema, and record order
+    I->>D: store new SHA-256 artifact in one transaction
+    B->>D: GET through REST API
+    D-->>B: run metadata or ordered records
+    B->>D: GET replay
+    D-->>B: original application/x-ndjson bytes
+```
+
+The dashboard requests `/api/scenarios` first. If no API is reachable during a
+static-only demonstration, it loads `/data/manifest.json` and the packaged
+JSONL files. Both paths use the same strict parser.
+
+## Identity and fleet boundaries
+
+Passwords use ASP.NET Core's password hasher. Login creates a random opaque
+bearer token, stores only its SHA-256 value, and returns the plain value once.
+Every protected request resolves an active, unexpired, unrevoked session.
+
+```mermaid
+flowchart LR
+    Login[Username + password] --> Auth[Authentication service]
+    Auth --> Hasher[Password verifier]
+    Auth --> Token[Random bearer token]
+    Token --> Hash[SHA-256 token value]
+    Hash --> Sessions[(Sessions table)]
+    Request[Protected request] --> Handler[Bearer handler]
+    Handler --> Sessions
+    Sessions --> Claims[User and role claims]
+    Claims --> Service[Application service rules]
+    Service --> Fleet[(Aircraft and assignments)]
+    Service --> Audit[(Audit log)]
+```
+
+Built-in roles describe application permissions:
+
+| Role | Account and role administration | Aircraft access |
+|---|---|---|
+| `Admin` | Full management and audit read | All aircraft, assignments, updates, and deletion |
+| `Operator` | None | Create aircraft; update assigned aircraft as `OWNER` or `MAINTAINER` |
+| `Viewer` | None | Read assigned aircraft |
+
+Aircraft assignment levels are separate from roles. `OWNER`, `MAINTAINER`,
+and `VIEWER` define access to one aircraft. Services protect the final active
+administrator and the final aircraft owner. Aircraft updates use an expected
+version so concurrent edits cannot silently overwrite each other.
+
+## Ownership and predictability
+
+- `TelemetryPayload` uses `std::variant` over six payload structs. Visitors
+  handle every allowed payload without downcasts.
+- Tests inject `ManualSimulationClock` through `ISimulationClock` and advance
+  virtual time without sleeping.
+- `BoundedQueue<T, Capacity>` stores slots in `std::array<std::optional<T>>`,
+  which makes capacity and maximum slot storage visible at compile time.
+- The composition root creates components at the process edge. Core APIs use
+  values and references, while RAII manages streams, containers, and object
+  lifetimes.
+- Seeded generation and virtual timestamps keep output independent of machine
+  speed. This gives logical determinism, not a hard real-time guarantee.
+
+## Deployment views
+
+### Native development
+
+```mermaid
+flowchart LR
+    CMake[CMake + Ninja] --> Binary[aeroguard executable]
+    Binary --> Data[frontend/public/data]
+    Dotnet[dotnet run] --> API[REST API]
+    Data --> API
+    API --> SQLite[(Local SQLite)]
+    NPM[npm + Vite] --> Browser[Local dashboard]
+    Browser --> API
+    Data -. fallback .-> Browser
+```
+
+### Docker demonstration
+
+The multi-stage image builds the C++ producer, generates seeded scenario data,
+publishes the .NET API, and builds the React bundle. Compose starts an API
+container with a named SQLite volume and an nginx container that serves React
+and proxies `/api`. The runtime images contain none of the C++, Node.js, or
+.NET SDK toolchains. The administrator password enters through the local
+environment and is absent from image layers and Git.
+
+## Safety and trust boundary
+
+AeroGuard is independent portfolio software. It uses no real aircraft
+interfaces, operational parameters, threat data, weapons, countermeasures, or
+confidential information. AeroGuard has no certification and makes no claim of
+deterministic execution deadlines, airworthiness, or suitability for physical
+control.

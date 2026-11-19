@@ -108,6 +108,22 @@ export interface ScenarioManifest {
   schema_version: 1;
   generated_by?: string;
   scenarios: ScenarioManifestEntry[];
+  source?: 'api' | 'static';
+}
+
+export interface RunArchiveEntry {
+  id: number | string;
+  scenario: string;
+  label: string;
+  description: string;
+  final_state: SystemState;
+  duration_ms: number;
+  tick_ms: number;
+  record_count?: number;
+  source_sha256?: string;
+  imported_at_utc?: string;
+  replay_url: string;
+  source: 'api' | 'static';
 }
 
 export const SUBSYSTEM_LABELS: Record<string, string> = {

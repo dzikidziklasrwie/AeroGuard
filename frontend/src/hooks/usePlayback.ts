@@ -1,46 +1,41 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const FRAME_MS = 100;
 
+interface PlaybackCursor {
+  key: string;
+  elapsedMs: number;
+}
+
 export function usePlayback(durationMs: number, resetKey: string) {
-  const [elapsedMs, setElapsedMs] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [cursor, setCursor] = useState<PlaybackCursor>({ key: resetKey, elapsedMs: 0 });
   const lastTick = useRef<number | null>(null);
-
-  /* eslint-disable react-hooks/set-state-in-effect -- A newly selected replay needs an independent playback cursor. */
-  useEffect(() => {
-    setElapsedMs(0);
-    setIsPlaying(false);
-    lastTick.current = null;
-  }, [resetKey]);
-  /* eslint-enable react-hooks/set-state-in-effect */
+  const elapsedMs = cursor.key === resetKey
+    ? Math.min(cursor.elapsedMs, Math.max(durationMs, 0))
+    : 0;
 
   useEffect(() => {
-    if (!isPlaying || durationMs <= 0) return;
+    lastTick.current = performance.now();
+    if (durationMs <= 0) return;
 
     const interval = window.setInterval(() => {
       const now = performance.now();
-      const delta = lastTick.current === null ? FRAME_MS : Math.min(now - lastTick.current, 500);
+      const delta = lastTick.current === null ? FRAME_MS : Math.max(now - lastTick.current, 0);
       lastTick.current = now;
-      setElapsedMs((current) => {
-        const next = Math.min(current + delta, durationMs);
-        if (next >= durationMs) setIsPlaying(false);
-        return next;
+      setCursor((current) => {
+        const currentElapsed = current.key === resetKey ? current.elapsedMs : 0;
+        const next = currentElapsed >= durationMs
+          ? 0
+          : Math.min(currentElapsed + delta, durationMs);
+        return {
+          key: resetKey,
+          elapsedMs: next,
+        };
       });
     }, FRAME_MS);
 
     return () => window.clearInterval(interval);
-  }, [durationMs, isPlaying]);
+  }, [durationMs, resetKey]);
 
-  useEffect(() => {
-    if (!isPlaying) lastTick.current = null;
-  }, [isPlaying]);
-
-  const pause = useCallback(() => setIsPlaying(false), []);
-  const play = useCallback(() => {
-    setElapsedMs((current) => (current >= durationMs ? 0 : current));
-    setIsPlaying(true);
-  }, [durationMs]);
-
-  return { elapsedMs, isPlaying, pause, play };
+  return { elapsedMs };
 }
