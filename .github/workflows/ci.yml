@@ -27,7 +27,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Enable the MSVC developer environment
         if: runner.os == 'Windows'
@@ -74,7 +74,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Configure sanitizer build
         run: cmake --preset sanitizers -DAEROGUARD_WARNINGS_AS_ERRORS=ON
@@ -93,7 +93,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Install clang-tidy
         run: |
@@ -121,7 +121,7 @@ jobs:
         working-directory: frontend
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -160,7 +160,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
@@ -195,7 +195,7 @@ jobs:
       AEROGUARD_ADMIN_PASSWORD: Ci-Only-Admin-Password-42!
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Validate Compose configuration
         run: docker compose config --quiet
