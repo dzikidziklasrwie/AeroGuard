@@ -55,7 +55,7 @@ COPY frontend/ ./
 COPY --from=demo-data /generated-data ./public/data
 RUN npm run build
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS api-build
+FROM mcr.microsoft.com/dotnet/sdk:11.0 AS api-build
 
 WORKDIR /source
 COPY backend/AeroGuard.Backend.sln backend/
