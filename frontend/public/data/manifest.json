@@ -1,0 +1,69 @@
+{
+  "generated_by": "AeroGuard",
+  "scenarios": [
+    {
+      "description": "The communication module stops reporting for two seconds, then resumes.",
+      "duration_ms": 8000,
+      "file": "communication-interruption.jsonl",
+      "final_state": "NORMAL",
+      "id": "communication-interruption",
+      "label": "Communication interruption",
+      "tick_ms": 100
+    },
+    {
+      "description": "A temperature sensor reports out-of-range values for 1.8 seconds, then recovers.",
+      "duration_ms": 8000,
+      "file": "invalid-sensor-data.jsonl",
+      "final_state": "NORMAL",
+      "id": "invalid-sensor-data",
+      "label": "Invalid sensor data",
+      "tick_ms": 100
+    },
+    {
+      "description": "Communication, cooling, computer and equipment faults overlap to test fault isolation.",
+      "duration_ms": 11000,
+      "file": "multiple-subsystem-failures.jsonl",
+      "final_state": "NORMAL",
+      "id": "multiple-subsystem-failures",
+      "label": "Multiple subsystem failures",
+      "tick_ms": 100
+    },
+    {
+      "description": "All six fictional subsystems stay within their nominal operating limits.",
+      "duration_ms": 8000,
+      "file": "normal-operation.jsonl",
+      "final_state": "NORMAL",
+      "id": "normal-operation",
+      "label": "Normal operation",
+      "tick_ms": 100
+    },
+    {
+      "description": "Supply voltage alternates between low and high limits for three seconds, then recovers.",
+      "duration_ms": 9000,
+      "file": "power-fluctuations.jsonl",
+      "final_state": "NORMAL",
+      "id": "power-fluctuations",
+      "label": "Power fluctuations",
+      "tick_ms": 100
+    },
+    {
+      "description": "A 1.5-second communication outage triggers a fault, a recovery hold and a return to normal.",
+      "duration_ms": 8000,
+      "file": "recovery-after-temporary-failure.jsonl",
+      "final_state": "NORMAL",
+      "id": "recovery-after-temporary-failure",
+      "label": "Recovery after temporary failure",
+      "tick_ms": 100
+    },
+    {
+      "description": "Synthetic temperature readings cross the fault threshold for 2.5 seconds, then cool down.",
+      "duration_ms": 9000,
+      "file": "simulated-overheating.jsonl",
+      "final_state": "NORMAL",
+      "id": "simulated-overheating",
+      "label": "Simulated overheating",
+      "tick_ms": 100
+    }
+  ],
+  "schema_version": 1
+}
