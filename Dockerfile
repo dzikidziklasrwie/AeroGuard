@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-FROM ubuntu:24.04 AS native-build
+FROM ubuntu:26.04 AS native-build
 
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
@@ -23,7 +23,7 @@ RUN cmake -S . -B /build -G Ninja \
       -DAEROGUARD_WARNINGS_AS_ERRORS=ON
 RUN cmake --build /build --target aeroguard
 
-FROM ubuntu:24.04 AS simulator
+FROM ubuntu:26.04 AS simulator
 
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
