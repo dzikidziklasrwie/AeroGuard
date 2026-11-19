@@ -1,6 +1,14 @@
-import { describe, expect, it } from 'vitest';
-import { DatasetError, numericTelemetryValues, parseJsonl } from './jsonl';
-import { jsonlFixture } from '../test/fixtures';
+import { describe, expect, it, vi } from 'vitest';
+import { DatasetError, fetchManifest, fetchRunArchive, numericTelemetryValues, parseJsonl } from './jsonl';
+import { jsonlFixture, manifestFixture } from '../test/fixtures';
+
+function response(body: unknown, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: vi.fn().mockResolvedValue(body),
+  } as unknown as Response;
+}
 
 describe('parseJsonl', () => {
   it('parses a normal-operation artifact and keeps the final summary', () => {
@@ -67,5 +75,60 @@ describe('numericTelemetryValues', () => {
   it('returns finite numeric values only', () => {
     expect(numericTelemetryValues({ voltage_v: 28.2, online: true, mode: 'normal', invalid: Infinity }))
       .toEqual([['voltage_v', 28.2]]);
+  });
+});
+
+describe('REST archive fallback', () => {
+  it('loads scenarios from the REST API first', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response(manifestFixture));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const manifest = await fetchManifest();
+
+    expect(manifest.source).toBe('api');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith('/api/scenarios', expect.any(Object));
+  });
+
+  it('uses the bundled manifest when the API is offline', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response('', 503))
+      .mockResolvedValueOnce(response(manifestFixture));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const manifest = await fetchManifest();
+
+    expect(manifest.source).toBe('static');
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/scenarios', '/data/manifest.json']);
+  });
+
+  it('normalizes stored runs returned by SQLite API', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response([{
+      id: 17,
+      scenario: 'normal-operation',
+      label: 'Normal operation',
+      description: 'All simulated subsystems stay within limits.',
+      final_state: 'NORMAL',
+      duration_ms: 1000,
+      tick_ms: 100,
+      record_count: 74,
+      replay_url: '/api/runs/17/replay',
+    }])));
+
+    const runs = await fetchRunArchive(manifestFixture as never);
+
+    expect(runs).toEqual([expect.objectContaining({ id: 17, source: 'api', record_count: 74 })]);
+  });
+
+  it('maps bundled scenarios into run cards when the archive is offline', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(response('', 503)));
+
+    const runs = await fetchRunArchive(manifestFixture as never);
+
+    expect(runs[0]).toMatchObject({
+      id: 'static-normal-operation',
+      replay_url: '/data/normal-operation.jsonl',
+      source: 'static',
+    });
   });
 });

@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Icon } from './components/Icons';
+import { OperationsWorkspace } from './components/OperationsWorkspace';
+import { RunArchive } from './components/RunArchive';
 import { TelemetryChart } from './components/TelemetryChart';
-import { fetchDataset, fetchManifest, numericTelemetryValues } from './data/jsonl';
+import { fetchDataset, fetchManifest, fetchRunArchive, numericTelemetryValues } from './data/jsonl';
 import { usePlayback } from './hooks/usePlayback';
 import {
   SEVERITIES,
@@ -9,6 +11,7 @@ import {
   SUBSYSTEM_LABELS,
   type EventRecord,
   type HealthState,
+  type RunArchiveEntry,
   type ScenarioManifest,
   type Severity,
   type SimulationDataset,
@@ -115,38 +118,6 @@ function SubsystemCard({ subsystem, latest, history }: SubsystemCardProps) {
   );
 }
 
-function PlaybackControls({
-  elapsedMs,
-  durationMs,
-  isPlaying,
-  onPlay,
-  onPause,
-}: {
-  elapsedMs: number;
-  durationMs: number;
-  isPlaying: boolean;
-  onPlay: () => void;
-  onPause: () => void;
-}) {
-  const isComplete = durationMs > 0 && elapsedMs >= durationMs;
-  const label = isPlaying
-    ? 'Pause replay'
-    : isComplete
-      ? 'Replay scenario'
-      : elapsedMs > 0
-        ? 'Resume replay'
-        : 'Play replay';
-
-  return (
-    <div className="playback-actions" aria-label="Telemetry playback controls">
-      <button className="button primary-button playback-button" type="button" onClick={isPlaying ? onPause : onPlay}>
-        <Icon name={isPlaying ? 'pause' : isComplete ? 'restart' : 'play'} />
-        {label}
-      </button>
-    </div>
-  );
-}
-
 function Timeline({ records, subsystems }: { records: TimelineRecord[]; subsystems: string[] }) {
   const [severity, setSeverity] = useState<'ALL' | Severity>('ALL');
   const [subsystem, setSubsystem] = useState('ALL');
@@ -183,7 +154,7 @@ function Timeline({ records, subsystems }: { records: TimelineRecord[]; subsyste
           </select>
         </span>
       </div>
-      <ol className="timeline-list" aria-live="polite">
+      <ol className="timeline-list">
         {filtered.length ? filtered.map((record, index) => {
           const isEvent = record.record_type === 'event';
           const code = isEvent ? record.event_code : `${record.from} → ${record.to}`;
@@ -239,13 +210,14 @@ function ArchitectureOverview() {
     { icon: 'database' as const, eyebrow: 'Input', title: 'Scenario config', text: 'Seeded, repeatable run parameters' },
     { icon: 'computer' as const, eyebrow: 'C++20', title: 'Health monitor', text: 'HAL, queues, validation and state machine' },
     { icon: 'database' as const, eyebrow: 'Artifact', title: 'JSONL log', text: 'Typed telemetry, events and transitions' },
-    { icon: 'aircraft' as const, eyebrow: 'React', title: 'Diagnostic replay', text: 'Read-only presentation and report export' },
+    { icon: 'database' as const, eyebrow: 'ASP.NET Core', title: 'SQLite archive', text: 'REST queries, identity and fleet records' },
+    { icon: 'aircraft' as const, eyebrow: 'React', title: 'Engineering console', text: 'Replay, reports and account-based fleet work' },
   ];
   return (
     <section className="architecture-section" id="architecture" aria-labelledby="architecture-title">
       <div className="section-heading-row">
         <div><p className="section-kicker">Data flow</p><h2 id="architecture-title">Architecture overview</h2></div>
-        <p>Simulation decisions stay in the C++ domain. This interface only replays its recorded output.</p>
+        <p>Simulation decisions stay in the C++ domain. The API stores artifacts and business records without recalculating health.</p>
       </div>
       <div className="architecture-flow">
         {stages.map((stage, index) => <div className="architecture-step" key={stage.title}>
@@ -265,15 +237,19 @@ function DashboardSkeleton() {
 
 export default function App() {
   const [manifestLoad, setManifestLoad] = useState<LoadState<ScenarioManifest>>({ status: 'loading' });
+  const [archiveLoad, setArchiveLoad] = useState<LoadState<RunArchiveEntry[]>>({ status: 'loading' });
   const [datasetLoad, setDatasetLoad] = useState<LoadState<SimulationDataset>>({ status: 'loading' });
   const [selectedScenario, setSelectedScenario] = useState('');
+  const [selectedRun, setSelectedRun] = useState<RunArchiveEntry>();
   const [manifestRetry, setManifestRetry] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
     fetchManifest(controller.signal)
       .then((manifest) => {
+        setArchiveLoad({ status: 'loading' });
         setManifestLoad({ status: 'ready', value: manifest });
+        setSelectedRun(undefined);
         setSelectedScenario((current) => manifest.scenarios.some(({ id }) => id === current) ? current : manifest.scenarios[0]?.id ?? '');
       })
       .catch((error: unknown) => {
@@ -283,9 +259,31 @@ export default function App() {
     return () => controller.abort();
   }, [manifestRetry]);
 
-  const scenario = manifestLoad.status === 'ready'
+  useEffect(() => {
+    if (manifestLoad.status !== 'ready') return;
+    const controller = new AbortController();
+    fetchRunArchive(manifestLoad.value, controller.signal)
+      .then((runs) => setArchiveLoad({ status: 'ready', value: runs }))
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        setArchiveLoad({ status: 'error', message: error instanceof Error ? error.message : 'Unknown archive error.' });
+      });
+    return () => controller.abort();
+  }, [manifestLoad]);
+
+  const manifestScenario = manifestLoad.status === 'ready'
     ? manifestLoad.value.scenarios.find(({ id }) => id === selectedScenario)
     : undefined;
+  const scenario = useMemo(() => selectedRun ? {
+      id: `archive-${selectedRun.id}`,
+      label: selectedRun.label,
+      description: selectedRun.description,
+      file: selectedRun.replay_url,
+      duration_ms: selectedRun.duration_ms,
+      tick_ms: selectedRun.tick_ms,
+      final_state: selectedRun.final_state,
+    } : manifestScenario,
+  [manifestScenario, selectedRun]);
 
   useEffect(() => {
     if (!scenario) return;
@@ -301,7 +299,7 @@ export default function App() {
 
   const dataset = datasetLoad.status === 'ready' ? datasetLoad.value : undefined;
   const durationMs = dataset?.metadata.duration_ms ?? 0;
-  const playback = usePlayback(durationMs, dataset?.source ?? selectedScenario);
+  const playback = usePlayback(durationMs, scenario?.file ?? selectedScenario);
 
   const visibleRecords = useMemo(
     () => dataset?.records.filter((record) => record.timestamp_ms <= playback.elapsedMs) ?? [],
@@ -353,12 +351,14 @@ export default function App() {
           <a href="#overview" className="active"><span>01</span>Overview</a>
           <a href="#subsystems"><span>02</span>Subsystems</a>
           <a href="#statistics"><span>03</span>Run statistics</a>
-          <a href="#architecture"><span>04</span>Architecture</a>
+          <a href="#archive"><span>04</span>Run archive</a>
+          <a href="#workspace"><span>05</span>Workspace</a>
+          <a href="#architecture"><span>06</span>Architecture</a>
         </nav>
         <div className="source-card">
             <span><Icon name="database" />Data source</span>
-          <strong>C++ simulator</strong>
-          <p>JSON Lines · Schema v1</p>
+          <strong>{manifestLoad.status === 'ready' && manifestLoad.value.source === 'api' ? 'SQLite REST archive' : 'C++ simulator files'}</strong>
+          <p>JSON Lines - Schema v1</p>
         </div>
         <p className="sidebar-foot">Independent educational project<br />Not for aircraft use</p>
       </aside>
@@ -399,6 +399,7 @@ export default function App() {
                 <span className="select-wrap">
                   <select value={selectedScenario} onChange={(event) => {
                     setDatasetLoad({ status: 'loading' });
+                    setSelectedRun(undefined);
                     setSelectedScenario(event.target.value);
                   }}>
                     {manifestLoad.value.scenarios.map((option) => <option value={option.id} key={option.id}>{option.label}</option>)}
@@ -406,6 +407,17 @@ export default function App() {
                 </span>
               </label>
             </section>
+
+            {archiveLoad.status === 'ready' && <RunArchive
+              runs={archiveLoad.value}
+              activeReplayUrl={dataFilePath(scenario.file)}
+              onOpen={(run) => {
+                setDatasetLoad({ status: 'loading' });
+                setSelectedScenario(run.scenario);
+                setSelectedRun(run);
+              }}
+            />}
+            {archiveLoad.status === 'error' && <p className="workspace-message error" role="status">Run archive unavailable: {archiveLoad.message}</p>}
 
             {datasetLoad.status === 'loading' ? <DashboardSkeleton /> : datasetLoad.status === 'error' ? (
               <section className="error-state" role="alert">
@@ -433,14 +445,6 @@ export default function App() {
                   </div>
                   <div className="hero-flightline" aria-hidden="true"><span /><i /><span /></div>
                 </section>
-
-                <PlaybackControls
-                  elapsedMs={playback.elapsedMs}
-                  durationMs={durationMs}
-                  isPlaying={playback.isPlaying}
-                  onPlay={playback.play}
-                  onPause={playback.pause}
-                />
 
                 <section className="subsystems-section" id="subsystems" aria-labelledby="subsystems-title">
                   <div className="section-heading-row">
@@ -479,7 +483,8 @@ export default function App() {
 
                 <Statistics dataset={dataset} />
                 <ArchitectureOverview />
-                <footer><span>AeroGuard</span><p>Avionics Health Monitoring Simulator · C++20 + React</p><p>Portfolio engineering project</p></footer>
+                <OperationsWorkspace />
+                <footer><span>AeroGuard</span><p>Avionics Health Monitoring Simulator - C++20 + ASP.NET Core + React</p><p>Portfolio engineering project</p></footer>
               </>
             )}
           </>

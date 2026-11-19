@@ -5,6 +5,7 @@ import {
   type EventRecord,
   type MetadataRecord,
   type ScenarioManifest,
+  type RunArchiveEntry,
   type SimulationDataset,
   type SimulationRecord,
   type StateTransitionRecord,
@@ -166,9 +167,77 @@ export async function fetchDataset(file: string, signal?: AbortSignal): Promise<
 }
 
 export async function fetchManifest(signal?: AbortSignal): Promise<ScenarioManifest> {
-  const response = await fetch('/data/manifest.json', { signal });
-  if (!response.ok) throw new DatasetError(`Scenario manifest request failed (HTTP ${response.status}).`);
-  return parseManifest(await response.json());
+  try {
+    const response = await fetch('/api/scenarios', { signal });
+    if (!response.ok) throw new DatasetError(`Scenario API request failed (HTTP ${response.status}).`);
+    return { ...parseManifest(await response.json()), source: 'api' };
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error;
+    const response = await fetch('/data/manifest.json', { signal });
+    if (!response.ok) throw new DatasetError(`Scenario manifest request failed (HTTP ${response.status}).`);
+    return { ...parseManifest(await response.json()), source: 'static' };
+  }
+}
+
+export async function fetchRunArchive(
+  manifest: ScenarioManifest,
+  signal?: AbortSignal,
+): Promise<RunArchiveEntry[]> {
+  try {
+    const response = await fetch('/api/runs?limit=12', { signal });
+    if (!response.ok) throw new DatasetError(`Run archive request failed (HTTP ${response.status}).`);
+    const value = await response.json() as unknown;
+    if (!Array.isArray(value)) throw new DatasetError('Run archive response must be an array.');
+    return value.map(parseRunArchiveEntry);
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') throw error;
+    return manifest.scenarios.map((scenario) => ({
+      id: `static-${scenario.id}`,
+      scenario: scenario.id,
+      label: scenario.label,
+      description: scenario.description,
+      final_state: scenario.final_state,
+      duration_ms: scenario.duration_ms,
+      tick_ms: scenario.tick_ms,
+      replay_url: dataFilePath(scenario.file),
+      source: 'static' as const,
+    }));
+  }
+}
+
+function dataFilePath(file: string): string {
+  if (/^(?:https?:)?\//.test(file)) return file;
+  return `/data/${file.replace(/^\.\//, '')}`;
+}
+
+function parseRunArchiveEntry(value: unknown): RunArchiveEntry {
+  if (
+    !isObject(value) ||
+    !isFiniteNumber(value.id) ||
+    !isString(value.scenario) ||
+    !isString(value.label) ||
+    !isString(value.description) ||
+    !isEnumValue(SYSTEM_STATES, value.final_state) ||
+    !isNonNegativeNumber(value.duration_ms) ||
+    !isNonNegativeNumber(value.tick_ms) ||
+    !isString(value.replay_url)
+  ) {
+    throw new DatasetError('Run archive entry does not match schema v1.');
+  }
+  return {
+    id: value.id,
+    scenario: value.scenario,
+    label: value.label,
+    description: value.description,
+    final_state: value.final_state,
+    duration_ms: value.duration_ms,
+    tick_ms: value.tick_ms,
+    record_count: isNonNegativeNumber(value.record_count) ? value.record_count : undefined,
+    source_sha256: isString(value.source_sha256) ? value.source_sha256 : undefined,
+    imported_at_utc: isString(value.imported_at_utc) ? value.imported_at_utc : undefined,
+    replay_url: value.replay_url,
+    source: 'api',
+  };
 }
 
 export function parseManifest(value: unknown): ScenarioManifest {

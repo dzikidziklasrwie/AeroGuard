@@ -8,9 +8,6 @@ type IconName =
   | 'communication'
   | 'computer'
   | 'equipment'
-  | 'play'
-  | 'pause'
-  | 'restart'
   | 'download'
   | 'filter'
   | 'clock'
@@ -49,12 +46,6 @@ export function Icon({ name, ...props }: IconProps) {
       return <svg {...common}><rect x="3" y="4" width="18" height="13" rx="2" /><path d="M8 21h8M12 17v4M7 8h5M7 11h3" /></svg>;
     case 'equipment':
       return <svg {...common}><path d="M12 2.5 20 7v10l-8 4.5L4 17V7l8-4.5Z" /><path d="m8.5 12 2.2 2.2 4.8-5" /></svg>;
-    case 'play':
-      return <svg {...common}><path d="m8 5 11 7-11 7V5Z" /></svg>;
-    case 'pause':
-      return <svg {...common}><path d="M9 5v14M15 5v14" /></svg>;
-    case 'restart':
-      return <svg {...common}><path d="M4 8V3m0 0h5M4 3l3.3 3.3A8 8 0 1 1 4.7 15" /></svg>;
     case 'download':
       return <svg {...common}><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14" /></svg>;
     case 'filter':
