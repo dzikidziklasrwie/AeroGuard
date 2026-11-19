@@ -70,7 +70,7 @@ RUN dotnet publish backend/src/AeroGuard.Api/AeroGuard.Api.csproj \
       --output /publish \
       /p:UseAppHost=false
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS api
+FROM mcr.microsoft.com/dotnet/aspnet:11.0 AS api
 
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
