@@ -93,7 +93,7 @@ HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=5 \
   CMD curl --fail --silent http://127.0.0.1:8080/api/health >/dev/null || exit 1
 ENTRYPOINT ["dotnet", "AeroGuard.Api.dll"]
 
-FROM nginx:1.27-alpine AS dashboard
+FROM nginx:1.29-alpine AS dashboard
 
 COPY --from=frontend-build /frontend/dist /usr/share/nginx/html
 COPY deploy/nginx.conf /etc/nginx/conf.d/default.conf
