@@ -17,6 +17,7 @@ public sealed class AeroGuardApiFactory : WebApplicationFactory<Program>
         builder.UseSetting(
             "AEROGUARD_DB_PATH",
             Path.Combine(_temporaryDirectory, "aeroguard-tests.db"));
+        builder.UseSetting("AEROGUARD_ADMIN_PASSWORD", "Test-Admin-Password-42!");
         builder.UseEnvironment("Testing");
     }
 

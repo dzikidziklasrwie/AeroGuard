@@ -2,10 +2,17 @@ using System.Text.Json;
 using AeroGuard.Api.Configuration;
 using AeroGuard.Api.Contracts;
 using AeroGuard.Api.Data;
+using AeroGuard.Api.Endpoints;
+using AeroGuard.Api.Errors;
+using AeroGuard.Api.Fleet;
+using AeroGuard.Api.Identity;
 using AeroGuard.Api.Import;
 using AeroGuard.Api.Models;
 using AeroGuard.Api.Validation;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Identity;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -16,20 +23,60 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.DictionaryKeyPolicy = JsonNamingPolicy.SnakeCaseLower;
 });
 builder.Services.AddOpenApi();
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<ApiExceptionHandler>();
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("login", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                AutoReplenishment = true,
+                PermitLimit = 30,
+                QueueLimit = 0,
+                Window = TimeSpan.FromMinutes(1),
+            }));
+});
 
 var archiveOptions = AeroGuardOptions.FromConfiguration(
     builder.Configuration,
     builder.Environment.ContentRootPath);
 builder.Services.AddSingleton(archiveOptions);
-builder.Services.AddSingleton(new ArchiveRepository(
-    archiveOptions.DatabasePath,
+builder.Services.AddSingleton<ISqliteConnectionFactory>(
+    new SqliteConnectionFactory(archiveOptions.DatabasePath));
+builder.Services.AddSingleton<ArchiveRepository>();
+builder.Services.AddSingleton(provider => new DatabaseInitializer(
+    provider.GetRequiredService<ISqliteConnectionFactory>(),
     archiveOptions.SchemaPath));
 builder.Services.AddSingleton(provider => new ArtifactImporter(
     archiveOptions.DataDirectory,
     provider.GetRequiredService<ArchiveRepository>()));
 
+var accessOptions = AccessOptions.FromConfiguration(builder.Configuration);
+builder.Services.AddSingleton(accessOptions);
+builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.AddSingleton<IIdentityRepository, IdentityRepository>();
+builder.Services.AddSingleton<IAuditRepository, AuditRepository>();
+builder.Services.AddSingleton<IAircraftRepository, AircraftRepository>();
+builder.Services.AddSingleton<IPasswordHasher<UserAccount>, PasswordHasher<UserAccount>>();
+builder.Services.AddSingleton<IAccessTokenIssuer, SecureAccessTokenIssuer>();
+builder.Services.AddSingleton<AeroGuard.Api.Identity.AuthenticationService>();
+builder.Services.AddSingleton<AccountAdministrationService>();
+builder.Services.AddSingleton<BootstrapAdminService>();
+builder.Services.AddSingleton<AircraftService>();
+builder.Services
+    .AddAuthentication(BearerTokenAuthenticationHandler.SchemeName)
+    .AddScheme<AuthenticationSchemeOptions, BearerTokenAuthenticationHandler>(
+        BearerTokenAuthenticationHandler.SchemeName,
+        _ => { });
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy("AdminOnly", policy => policy.RequireRole(BuiltInRoles.Admin));
+
 var app = builder.Build();
 
+app.UseExceptionHandler();
 app.Use(async (context, next) =>
 {
     context.Response.Headers.XContentTypeOptions = "nosniff";
@@ -38,11 +85,19 @@ app.Use(async (context, next) =>
     context.Response.Headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'";
     await next();
 });
+app.UseRateLimiter();
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapOpenApi();
 
+await app.Services
+    .GetRequiredService<DatabaseInitializer>()
+    .InitializeAsync(app.Lifetime.ApplicationStopping);
+await app.Services
+    .GetRequiredService<BootstrapAdminService>()
+    .EnsureAdminAsync(app.Lifetime.ApplicationStopping);
 var repository = app.Services.GetRequiredService<ArchiveRepository>();
-await repository.InitializeAsync(app.Lifetime.ApplicationStopping);
 var importReport = await app.Services
     .GetRequiredService<ArtifactImporter>()
     .ImportManifestAsync(app.Lifetime.ApplicationStopping);
@@ -205,6 +260,10 @@ app.MapGet("/api/runs/{id:long:min(1)}/records", async Task<IResult> (
     .Produces<IReadOnlyList<RecordDto>>()
     .ProducesValidationProblem()
     .Produces(StatusCodes.Status404NotFound);
+
+app.MapAuthenticationEndpoints();
+app.MapAdministrationEndpoints();
+app.MapAircraftEndpoints();
 
 app.Run();
 
