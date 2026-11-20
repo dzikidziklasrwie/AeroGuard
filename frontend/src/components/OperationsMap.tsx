@@ -1,0 +1,722 @@
+import { geoGraticule10, geoNaturalEarth1, geoPath } from 'd3-geo';
+import type { FeatureCollection, GeoJsonProperties, Geometry } from 'geojson';
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  type MouseEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { feature } from 'topojson-client';
+import type { GeometryCollection, Topology } from 'topojson-specification';
+import worldData from 'world-atlas/countries-110m.json';
+import {
+  createOperationFlight,
+  deleteOperationFlight,
+  getOperationFlights,
+  getOperationMessages,
+  getOperationPermissions,
+  sendOperationMessage,
+  updateOperationFlight,
+  ApiError,
+} from '../api/client';
+import { connectOperationsHub } from '../api/operationsHub';
+import {
+  CHAT_SHARE_TYPES,
+  FLIGHT_SCOPE_TYPES,
+  OPERATION_PERMISSION_LABELS,
+  type AircraftRecord,
+  type ChatMessageRecord,
+  type ChatShareType,
+  type FlightInput,
+  type FlightRecord,
+  type FlightScopeType,
+  type OperationPermission,
+  type UserAccount,
+} from '../api/types';
+import type { RunArchiveEntry } from '../types';
+import { titleCase } from '../utils/format';
+
+const MAP_WIDTH = 1_080;
+const MAP_HEIGHT = 570;
+const topology = worldData as unknown as Topology<{ countries: GeometryCollection }>;
+const countries = feature(topology, topology.objects.countries) as FeatureCollection<Geometry, GeoJsonProperties>;
+const projection = geoNaturalEarth1().fitExtent([[18, 18], [MAP_WIDTH - 18, MAP_HEIGHT - 18]], { type: 'Sphere' });
+const path = geoPath(projection);
+const spherePath = path({ type: 'Sphere' }) ?? '';
+const countriesPath = path(countries) ?? '';
+const graticulePath = path(geoGraticule10()) ?? '';
+
+const DEMO_COORDINATES = [
+  { latitude: 52.23, longitude: 21.01 },
+  { latitude: 40.71, longitude: -74.01 },
+  { latitude: -33.87, longitude: 151.21 },
+  { latitude: 35.68, longitude: 139.65 },
+  { latitude: -1.29, longitude: 36.82 },
+  { latitude: -23.55, longitude: -46.63 },
+];
+const CONTINENT_OPTIONS = [
+  ['AF', 'Africa'],
+  ['AN', 'Antarctica'],
+  ['AS', 'Asia'],
+  ['EU', 'Europe'],
+  ['NA', 'North America'],
+  ['OC', 'Oceania'],
+  ['SA', 'South America'],
+] as const;
+
+type DataMode = 'loading' | 'api' | 'demo' | 'error';
+type StreamState = 'connecting' | 'connected' | 'snapshot';
+
+interface PlacementDraft {
+  kind: 'create' | 'move';
+  flightId?: number;
+  aircraftId: string;
+  runId: string;
+  scopeType: FlightScopeType;
+  scopeCode: string;
+  speedKph: string;
+  latitude: string;
+  longitude: string;
+}
+
+interface OperationsMapProps {
+  token: string;
+  currentUser: UserAccount;
+  aircraft: AircraftRecord[];
+  runs?: RunArchiveEntry[];
+  onUnauthorized: () => void;
+}
+
+function hasRole(user: UserAccount, role: string): boolean {
+  return user.roles.some((candidate) => candidate.toLowerCase() === role.toLowerCase());
+}
+
+function isApiUnavailable(error: unknown): boolean {
+  return error instanceof TypeError
+    || (error instanceof ApiError && (error.status === 404 || error.status >= 500));
+}
+
+function formatCoordinate(value: number, positive: string, negative: string): string {
+  return `${Math.abs(value).toFixed(2)}° ${value >= 0 ? positive : negative}`;
+}
+
+function formatScenarioTime(elapsedMs: number, durationMs: number): string {
+  const elapsed = Math.max(0, Math.round(elapsedMs / 1000));
+  const duration = Math.max(0, Math.round(durationMs / 1000));
+  return `${elapsed}s / ${duration}s`;
+}
+
+function permissionLabel(permission: OperationPermission): string {
+  return OPERATION_PERMISSION_LABELS[permission];
+}
+
+function createDemoFlights(aircraft: AircraftRecord[], user: UserAccount): FlightRecord[] {
+  const now = new Date().toISOString();
+  const isAdmin = hasRole(user, 'Admin');
+  return aircraft.slice(0, DEMO_COORDINATES.length).map((item, index) => {
+    const point = DEMO_COORDINATES[index];
+    const condition = item.status === 'ACTIVE' ? 'HEALTHY' : item.status === 'MAINTENANCE' ? 'DEGRADED' : 'CRITICAL';
+    const currentUserOwnsAircraft = item.current_user_access === 'OWNER';
+    return {
+      id: -(index + 1),
+      aircraft_id: item.id,
+      tail_number: item.tail_number,
+      display_name: item.display_name,
+      owner_user_id: currentUserOwnsAircraft ? user.id : item.created_by,
+      owner_username: currentUserOwnsAircraft ? user.username : `registry-owner-${item.created_by}`,
+      owner_display_name: currentUserOwnsAircraft ? user.display_name : `Registry owner #${item.created_by}`,
+      current_user_access: item.current_user_access,
+      scope_type: 'WORLD',
+      scope_code: 'WORLD',
+      latitude: point.latitude,
+      longitude: point.longitude,
+      heading_deg: (35 + index * 61) % 360,
+      speed_kph: item.status === 'GROUNDED' ? 0 : 690 + index * 17,
+      run_id: 0,
+      scenario: 'session-demo',
+      scenario_label: 'Session demo',
+      scenario_elapsed_ms: 18_000 + index * 4_000,
+      scenario_duration_ms: 90_000,
+      condition,
+      telemetry: [
+        { subsystem: 'Navigation', health: condition, valid: true, reason: null, data: { heading_deg: (35 + index * 61) % 360 } },
+        { subsystem: 'Power', health: condition === 'CRITICAL' ? 'DEGRADED' : 'HEALTHY', valid: true, reason: null, data: { bus_voltage_v: 27.8 } },
+      ],
+      version: 1,
+      started_at_utc: now,
+      updated_at_utc: now,
+      can_manage: isAdmin || currentUserOwnsAircraft,
+      can_remove: isAdmin || item.current_user_access === 'OWNER',
+    };
+  });
+}
+
+function createDemoMessages(flight: FlightRecord, user: UserAccount): ChatMessageRecord[] {
+  return [{
+    id: -Math.abs(flight.id * 10 + 1),
+    flight_id: flight.id,
+    sender_user_id: user.id,
+    sender_username: user.username,
+    sender_display_name: user.display_name,
+    message: `${flight.tail_number} joined the simulated operations room.`,
+    share_type: 'TEXT',
+    payload: null,
+    sent_at_utc: flight.started_at_utc,
+  }];
+}
+
+function flightInputFromDraft(draft: PlacementDraft): FlightInput | null {
+  const aircraftId = Number(draft.aircraftId);
+  const runId = draft.runId.trim() ? Number(draft.runId) : null;
+  const latitude = Number(draft.latitude);
+  const longitude = Number(draft.longitude);
+  const speedKph = Number(draft.speedKph);
+  if (!aircraftId || !Number.isFinite(latitude) || !Number.isFinite(longitude) || !Number.isFinite(speedKph)) return null;
+  if (latitude < -85 || latitude > 85 || longitude < -180 || longitude > 180 || speedKph < 400 || speedKph > 1100) return null;
+  if (runId === null || !Number.isInteger(runId) || runId <= 0) return null;
+  if (draft.scopeType === 'CONTINENT' && !CONTINENT_OPTIONS.some(([code]) => code === draft.scopeCode.trim())) return null;
+  if (draft.scopeType === 'COUNTRY' && !/^[A-Z]{3}$/.test(draft.scopeCode.trim())) return null;
+  return {
+    aircraft_id: aircraftId,
+    run_id: runId,
+    scope_type: draft.scopeType,
+    scope_code: draft.scopeType === 'WORLD' ? 'WORLD' : draft.scopeCode.trim(),
+    latitude,
+    longitude,
+    speed_kph: speedKph,
+  };
+}
+
+function telemetryValue(value: unknown): string {
+  if (typeof value === 'number') return Number.isInteger(value) ? String(value) : value.toFixed(2);
+  if (typeof value === 'string' || typeof value === 'boolean') return String(value);
+  return JSON.stringify(value);
+}
+
+export function OperationsMap({ token, currentUser, aircraft, runs = [], onUnauthorized }: OperationsMapProps) {
+  const [flights, setFlights] = useState<FlightRecord[]>([]);
+  const [permissions, setPermissions] = useState<OperationPermission[]>([]);
+  const [selectedFlightId, setSelectedFlightId] = useState<number | null>(null);
+  const [dataMode, setDataMode] = useState<DataMode>('loading');
+  const [streamState, setStreamState] = useState<StreamState>('connecting');
+  const [placement, setPlacement] = useState<PlacementDraft | null>(null);
+  const [messages, setMessages] = useState<Record<number, ChatMessageRecord[]>>({});
+  const [messageText, setMessageText] = useState('');
+  const [shareType, setShareType] = useState<ChatShareType>('TEXT');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const mapRef = useRef<SVGSVGElement>(null);
+  const eventSequencesRef = useRef(new Map<number, number>());
+  const isAdmin = hasRole(currentUser, 'Admin');
+  const selectedFlight = flights.find((flight) => flight.id === selectedFlightId) ?? flights[0];
+
+  const handleError = useCallback((requestError: unknown) => {
+    if (requestError instanceof ApiError && requestError.status === 401) {
+      onUnauthorized();
+      return;
+    }
+    setError(requestError instanceof Error ? requestError.message : 'The operation failed. Try again.');
+  }, [onUnauthorized]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+    async function load() {
+      const [flightResult, permissionResult] = await Promise.allSettled([
+        getOperationFlights(token, controller.signal),
+        getOperationPermissions(token, controller.signal),
+      ]);
+      if (!active) return;
+
+      if (flightResult.status === 'fulfilled') {
+        setFlights(flightResult.value);
+        setSelectedFlightId((current) => current ?? flightResult.value[0]?.id ?? null);
+        setStreamState('connecting');
+        setDataMode('api');
+      } else if (isApiUnavailable(flightResult.reason)) {
+        const demoFlights = createDemoFlights(aircraft, currentUser);
+        setFlights(demoFlights);
+        setSelectedFlightId(demoFlights[0]?.id ?? null);
+        setDataMode('demo');
+        setStreamState('snapshot');
+      } else {
+        setDataMode('error');
+        handleError(flightResult.reason);
+      }
+
+      if (permissionResult.status === 'fulfilled') {
+        setPermissions(permissionResult.value);
+      } else if (permissionResult.reason instanceof ApiError && permissionResult.reason.status === 401) {
+        onUnauthorized();
+      }
+    }
+    void load();
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [aircraft, currentUser, handleError, onUnauthorized, token]);
+
+  useEffect(() => {
+    if (dataMode !== 'api') return;
+    let active = true;
+    let disconnect: (() => Promise<void>) | undefined;
+    const acceptEvent = (flightId: number, sequence?: number) => {
+      if (!sequence) return true;
+      const previous = eventSequencesRef.current.get(flightId) ?? 0;
+      if (sequence <= previous) return false;
+      eventSequencesRef.current.set(flightId, sequence);
+      return true;
+    };
+    connectOperationsHub(token, {
+      onFlightUpdated: (flight) => {
+        if (!acceptEvent(flight.id, flight.event_sequence)) return;
+        setFlights((current) => {
+          const exists = current.some((candidate) => candidate.id === flight.id);
+          return exists ? current.map((candidate) => candidate.id === flight.id ? flight : candidate) : [...current, flight];
+        });
+      },
+      onFlightRemoved: (flightId, eventSequence) => {
+        if (!acceptEvent(flightId, eventSequence)) return;
+        setFlights((current) => current.filter((flight) => flight.id !== flightId));
+        setSelectedFlightId((current) => current === flightId ? null : current);
+      },
+      onMessagePosted: (message) => {
+        setMessages((current) => {
+          const existing = current[message.flight_id] ?? [];
+          return existing.some((candidate) => candidate.id === message.id)
+            ? current
+            : { ...current, [message.flight_id]: [...existing, message] };
+        });
+      },
+      onReconnected: async () => {
+        try {
+          const snapshot = await getOperationFlights(token);
+          setFlights(snapshot);
+          setSelectedFlightId((current) => snapshot.some((flight) => flight.id === current) ? current : snapshot[0]?.id ?? null);
+          setStreamState('connected');
+        } catch (requestError) {
+          handleError(requestError);
+        }
+      },
+    }).then((stop) => {
+      if (!active) {
+        void stop();
+        return;
+      }
+      disconnect = stop;
+      setStreamState('connected');
+    }).catch(() => {
+      if (active) setStreamState('snapshot');
+    });
+    return () => {
+      active = false;
+      if (disconnect) void disconnect();
+    };
+  }, [dataMode, handleError, token]);
+
+  useEffect(() => {
+    if (dataMode !== 'api' || streamState !== 'snapshot') return;
+    let active = true;
+    const refresh = async () => {
+      try {
+        const snapshot = await getOperationFlights(token);
+        if (!active) return;
+        setFlights(snapshot);
+        setSelectedFlightId((current) => snapshot.some((flight) => flight.id === current) ? current : snapshot[0]?.id ?? null);
+      } catch (requestError) {
+        if (active) handleError(requestError);
+      }
+    };
+    const interval = window.setInterval(() => void refresh(), 5_000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [dataMode, handleError, streamState, token]);
+
+  useEffect(() => {
+    if (!selectedFlight) return;
+    if (messages[selectedFlight.id]) return;
+    if (dataMode === 'demo') return;
+    if (dataMode !== 'api') return;
+    const controller = new AbortController();
+    getOperationMessages(token, selectedFlight.id, controller.signal)
+      .then((records) => setMessages((current) => ({ ...current, [selectedFlight.id]: records })))
+      .catch((requestError: unknown) => {
+        if (!(requestError instanceof DOMException && requestError.name === 'AbortError')) handleError(requestError);
+      });
+    return () => controller.abort();
+  }, [currentUser, dataMode, handleError, messages, selectedFlight, token]);
+
+  const availableAircraft = useMemo(() => {
+    const activeAircraftIds = new Set(flights.map((flight) => flight.aircraft_id));
+    return aircraft.filter((item) => item.status === 'ACTIVE' && !activeAircraftIds.has(item.id) && (isAdmin || item.current_user_access === 'OWNER'));
+  }, [aircraft, flights, isAdmin]);
+  const availableRuns = useMemo(
+    () => runs.filter((run): run is RunArchiveEntry & { id: number } => run.source === 'api' && typeof run.id === 'number'),
+    [runs],
+  );
+  const canPlace = isAdmin || permissions.includes('FLIGHT_PLACE_OWN');
+  const canSendChat = isAdmin || permissions.includes('CHAT_SEND');
+  const canShareTelemetry = isAdmin || (
+    permissions.includes('TELEMETRY_SHARE') && selectedFlight?.current_user_access === 'OWNER'
+  );
+  const flightMessages = selectedFlight
+    ? messages[selectedFlight.id] ?? (dataMode === 'demo' ? createDemoMessages(selectedFlight, currentUser) : [])
+    : [];
+
+  function beginCreate() {
+    const firstAircraft = availableAircraft[0];
+    const firstRun = availableRuns[0];
+    if (!firstAircraft || !firstRun) return;
+    setPlacement({
+      kind: 'create',
+      aircraftId: String(firstAircraft.id),
+      runId: String(firstRun.id),
+      scopeType: 'WORLD',
+      scopeCode: '',
+      speedKph: '720',
+      latitude: '',
+      longitude: '',
+    });
+    setError('');
+    setNotice('Click the map or enter coordinates to set the simulated start position.');
+  }
+
+  function beginMove(flight: FlightRecord) {
+    setPlacement({
+      kind: 'move',
+      flightId: flight.id,
+      aircraftId: String(flight.aircraft_id),
+      runId: flight.run_id ? String(flight.run_id) : '',
+      scopeType: flight.scope_type,
+      scopeCode: flight.scope_code ?? '',
+      speedKph: String(flight.speed_kph),
+      latitude: String(flight.latitude),
+      longitude: String(flight.longitude),
+    });
+    setError('');
+    setNotice('Click the map or edit the coordinates to move this simulated flight.');
+  }
+
+  function mapClicked(event: MouseEvent<SVGSVGElement>) {
+    if (!placement || !mapRef.current) return;
+    const bounds = mapRef.current.getBoundingClientRect();
+    if (!bounds.width || !bounds.height) return;
+    const point: [number, number] = [
+      (event.clientX - bounds.left) * MAP_WIDTH / bounds.width,
+      (event.clientY - bounds.top) * MAP_HEIGHT / bounds.height,
+    ];
+    const coordinate = projection.invert?.(point);
+    if (!coordinate) return;
+    setPlacement((current) => current ? {
+      ...current,
+      longitude: coordinate[0].toFixed(4),
+      latitude: coordinate[1].toFixed(4),
+    } : current);
+  }
+
+  async function savePlacement(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!placement) return;
+    const input = flightInputFromDraft(placement);
+    if (!input) {
+      setError('Enter a valid run ID, coordinates from 85° S to 85° N, and a speed from 400 to 1,100 km/h.');
+      return;
+    }
+    if (placement.scopeType !== 'WORLD' && !placement.scopeCode.trim()) {
+      setError('Enter a scope code for the selected area.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    setNotice('');
+    try {
+      let saved: FlightRecord;
+      if (dataMode === 'demo') {
+        if (placement.kind === 'move') {
+          const existing = flights.find((flight) => flight.id === placement.flightId);
+          if (!existing) return;
+          saved = { ...existing, ...input, version: existing.version + 1, updated_at_utc: new Date().toISOString() };
+        } else {
+          const source = aircraft.find((item) => item.id === input.aircraft_id);
+          if (!source) return;
+          const nextId = Math.min(0, ...flights.map((flight) => flight.id)) - 1;
+          saved = {
+            ...createDemoFlights([source], currentUser)[0],
+            ...input,
+            id: nextId,
+            heading_deg: 0,
+            can_manage: true,
+            can_remove: true,
+          };
+        }
+      } else if (placement.kind === 'move') {
+        const existing = flights.find((flight) => flight.id === placement.flightId);
+        if (!existing) return;
+        saved = await updateOperationFlight(token, existing, input);
+      } else {
+        saved = await createOperationFlight(token, input);
+      }
+      setFlights((current) => current.some((flight) => flight.id === saved.id)
+        ? current.map((flight) => flight.id === saved.id ? saved : flight)
+        : [...current, saved]);
+      setSelectedFlightId(saved.id);
+      setPlacement(null);
+      setNotice(placement.kind === 'move' ? 'Simulated flight position updated.' : 'Simulated flight added to the map.');
+    } catch (requestError) {
+      handleError(requestError);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeFlight(flight: FlightRecord) {
+    if (!window.confirm(`Remove ${flight.tail_number} from the simulated operations map?`)) return;
+    setBusy(true);
+    setError('');
+    try {
+      if (dataMode === 'api') await deleteOperationFlight(token, flight.id);
+      setFlights((current) => current.filter((candidate) => candidate.id !== flight.id));
+      setSelectedFlightId(null);
+      setPlacement(null);
+      setNotice('Simulated flight removed from the map.');
+    } catch (requestError) {
+      handleError(requestError);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function postMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedFlight || !messageText.trim() || !canSendChat || (shareType === 'TELEMETRY' && !canShareTelemetry)) return;
+    setBusy(true);
+    setError('');
+    try {
+      const posted = dataMode === 'api'
+        ? await sendOperationMessage(token, selectedFlight.id, messageText.trim(), shareType)
+        : {
+            id: Date.now(),
+            flight_id: selectedFlight.id,
+            sender_user_id: currentUser.id,
+            sender_username: currentUser.username,
+            sender_display_name: currentUser.display_name,
+            message: messageText.trim(),
+            share_type: shareType,
+            payload: shareType === 'LOCATION'
+              ? { latitude: selectedFlight.latitude, longitude: selectedFlight.longitude }
+              : shareType === 'TELEMETRY' ? selectedFlight.telemetry : null,
+            sent_at_utc: new Date().toISOString(),
+          } satisfies ChatMessageRecord;
+      setMessages((current) => ({
+        ...current,
+        [selectedFlight.id]: [...(current[selectedFlight.id] ?? (dataMode === 'demo' ? createDemoMessages(selectedFlight, currentUser) : [])), posted],
+      }));
+      setMessageText('');
+      setShareType('TEXT');
+    } catch (requestError) {
+      handleError(requestError);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function selectMarker(flightId: number, event?: KeyboardEvent<SVGGElement>) {
+    if (event && event.key !== 'Enter' && event.key !== ' ') return;
+    event?.preventDefault();
+    setSelectedFlightId(flightId);
+  }
+
+  if (dataMode === 'loading') {
+    return <div className="operations-map-loading" role="status"><span className="loader" />Loading simulated flight positions...</div>;
+  }
+
+  if (dataMode === 'error') {
+    return <div className="operations-map-error" role="alert"><strong>Operations map unavailable</strong><p>{error}</p></div>;
+  }
+
+  return (
+    <div className="operations-map-workspace">
+      <div className="operations-command-bar">
+        <div>
+          <span className="simulation-flag"><i aria-hidden="true" />Simulation only</span>
+          <p>Positions come from recorded scenarios and user placement. AeroGuard doesn't connect to live aircraft.</p>
+        </div>
+        <div className="operations-command-actions">
+          <span className={`stream-state stream-${streamState}`}><i aria-hidden="true" />{dataMode === 'demo' ? 'Session demo' : streamState === 'connected' ? 'SignalR connected' : streamState === 'connecting' ? 'Connecting stream' : 'REST polling'}</span>
+          {canPlace && <button type="button" className="button primary-button" onClick={beginCreate} disabled={busy || availableAircraft.length === 0 || availableRuns.length === 0} title={!availableRuns.length ? 'An archived API run is required.' : !availableAircraft.length ? 'An owned aircraft with Active status is required.' : undefined}>Place aircraft</button>}
+        </div>
+      </div>
+
+      {dataMode === 'demo' && <p className="workspace-message demo" role="status">The operations API is unavailable. This session uses temporary simulated flights and messages.</p>}
+      {error && <p className="workspace-message error" role="alert">{error}</p>}
+      {notice && <p className="workspace-message success" role="status">{notice}</p>}
+
+      <div className="operations-grid">
+        <aside className="flight-index" aria-labelledby="flight-index-title">
+          <div className="flight-index-heading">
+            <div><p className="section-kicker">Active scenarios</p><h3 id="flight-index-title">Flight board</h3></div>
+            <span>{flights.length}</span>
+          </div>
+          <div className="flight-index-stats" aria-label="Simulated flight condition summary">
+            <span><i className="healthy" />{flights.filter((flight) => flight.condition === 'HEALTHY').length} healthy</span>
+            <span><i className="attention" />{flights.filter((flight) => flight.condition !== 'HEALTHY').length} attention</span>
+          </div>
+          <div className="flight-roster" role="list" aria-label="Simulated flights">
+            {flights.map((flight) => (
+              <div role="listitem" key={flight.id}>
+                <button
+                  type="button"
+                  className={`flight-roster-row${flight.id === selectedFlight?.id ? ' active' : ''}`}
+                  onClick={() => setSelectedFlightId(flight.id)}
+                  aria-pressed={flight.id === selectedFlight?.id}
+                >
+                  <span className={`flight-condition condition-${flight.condition.toLowerCase()}`} aria-hidden="true" />
+                  <span><strong>{flight.tail_number}</strong><small>{flight.display_name}</small></span>
+                  <span><strong>{Math.round(flight.speed_kph)}</strong><small>km/h</small></span>
+                </button>
+              </div>
+            ))}
+            {!flights.length && <div className="empty-entity"><strong>No simulated flights</strong><p>Place an owned aircraft to start a scenario.</p></div>}
+          </div>
+          <div className="permission-summary">
+            <span>Your operations access</span>
+            <p>{isAdmin ? 'Admin role grants all map controls.' : permissions.length ? permissions.map(permissionLabel).join(', ') : 'View only'}</p>
+          </div>
+        </aside>
+
+        <section className="world-map-panel" aria-labelledby="operations-map-title">
+          <div className="world-map-heading">
+            <div><p className="section-kicker">Global view</p><h3 id="operations-map-title">Simulated operations map</h3></div>
+            {placement && <span className="placement-mode">Map placement active</span>}
+          </div>
+
+          {placement && <form className="placement-card" onSubmit={savePlacement}>
+            <div className="placement-card-heading">
+              <div><span>{placement.kind === 'create' ? 'New simulated flight' : 'Move simulated flight'}</span><strong>{placement.kind === 'create' ? 'Choose a start point' : selectedFlight?.tail_number}</strong></div>
+              <button type="button" className="text-button" onClick={() => setPlacement(null)}>Cancel</button>
+            </div>
+            <div className="placement-fields">
+              <label><span>Aircraft</span><select value={placement.aircraftId} disabled={placement.kind === 'move'} onChange={(event) => setPlacement({ ...placement, aircraftId: event.target.value })}>{placement.kind === 'move' && selectedFlight ? <option value={selectedFlight.aircraft_id}>{selectedFlight.tail_number}</option> : availableAircraft.map((item) => <option value={item.id} key={item.id}>{item.tail_number} - {item.display_name}</option>)}</select></label>
+              <label><span>Recorded run</span><select value={placement.runId} onChange={(event) => setPlacement({ ...placement, runId: event.target.value })} required><option value="">Select run</option>{availableRuns.map((run) => <option value={run.id} key={run.id}>{run.id} - {run.label}</option>)}{placement.kind === 'move' && placement.runId && !availableRuns.some((run) => String(run.id) === placement.runId) && <option value={placement.runId}>Run {placement.runId}</option>}</select></label>
+              <label><span>Scope</span><select value={placement.scopeType} onChange={(event) => setPlacement({ ...placement, scopeType: event.target.value as FlightScopeType })}>{FLIGHT_SCOPE_TYPES.map((scope) => <option value={scope} key={scope}>{titleCase(scope)}</option>)}</select></label>
+              {placement.scopeType === 'CONTINENT' && <label><span>Continent</span><select value={placement.scopeCode} onChange={(event) => setPlacement({ ...placement, scopeCode: event.target.value })} required><option value="">Select continent</option>{CONTINENT_OPTIONS.map(([code, label]) => <option value={code} key={code}>{label}</option>)}</select></label>}
+              {placement.scopeType === 'COUNTRY' && <label><span>Country code</span><input value={placement.scopeCode} onChange={(event) => setPlacement({ ...placement, scopeCode: event.target.value.toUpperCase() })} placeholder="POL" minLength={3} maxLength={3} pattern="[A-Z]{3}" required /></label>}
+              <label><span>Latitude</span><input type="number" min="-85" max="85" step="0.0001" value={placement.latitude} onChange={(event) => setPlacement({ ...placement, latitude: event.target.value })} required /></label>
+              <label><span>Longitude</span><input type="number" min="-180" max="180" step="0.0001" value={placement.longitude} onChange={(event) => setPlacement({ ...placement, longitude: event.target.value })} required /></label>
+              <label><span>Speed km/h</span><input type="number" min="400" max="1100" step="1" value={placement.speedKph} onChange={(event) => setPlacement({ ...placement, speedKph: event.target.value })} required /></label>
+              <button className="button primary-button" type="submit" disabled={busy}>{busy ? 'Saving...' : placement.kind === 'create' ? 'Start simulated flight' : 'Save position'}</button>
+            </div>
+          </form>}
+
+          <div className={`world-map-stage${placement ? ' placement-active' : ''}`}>
+            <svg
+              ref={mapRef}
+              data-testid="operations-world-map"
+              viewBox={`0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`}
+              role="group"
+              aria-label="Interactive world map with simulated aircraft positions"
+              onClick={mapClicked}
+            >
+              <title>Interactive world map with simulated aircraft positions</title>
+              <defs>
+                <radialGradient id="ocean-glow" cx="50%" cy="42%" r="68%"><stop offset="0%" stopColor="#102c3b" /><stop offset="100%" stopColor="#07131d" /></radialGradient>
+                <filter id="marker-glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="5" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+              </defs>
+              <path className="map-sphere" d={spherePath} />
+              <path className="map-graticule" d={graticulePath} />
+              <path className="map-countries" d={countriesPath} />
+              {flights.map((flight) => {
+                const point = projection([flight.longitude, flight.latitude]);
+                if (!point) return null;
+                const active = flight.id === selectedFlight?.id;
+                return <g
+                  key={flight.id}
+                  className={`aircraft-marker marker-${flight.condition.toLowerCase()}${active ? ' active' : ''}`}
+                  transform={`translate(${point[0]} ${point[1]})`}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`${flight.tail_number}, simulated position ${formatCoordinate(flight.latitude, 'N', 'S')}, ${formatCoordinate(flight.longitude, 'E', 'W')}`}
+                  onClick={(event) => { event.stopPropagation(); setSelectedFlightId(flight.id); }}
+                  onKeyDown={(event) => selectMarker(flight.id, event)}
+                >
+                  <circle className="marker-pulse" r={active ? 18 : 13} />
+                  <circle className="marker-core" r={active ? 7 : 5.5} />
+                  <path className="marker-aircraft" d="M0 -8 L3 -1 L9 2 L9 4 L3 3 L2 8 L-2 8 L-3 3 L-9 4 L-9 2 L-3 -1 Z" transform={`rotate(${flight.heading_deg})`} />
+                  <g className="marker-label" transform="translate(12 -14)"><rect width="76" height="25" rx="4" /><text x="9" y="17">{flight.tail_number}</text></g>
+                </g>;
+              })}
+              {placement && flightInputFromDraft(placement) && (() => {
+                const draft = flightInputFromDraft(placement);
+                const point = draft ? projection([draft.longitude, draft.latitude]) : null;
+                return point ? <g className="draft-marker" transform={`translate(${point[0]} ${point[1]})`} aria-hidden="true"><circle r="14" /><path d="M-8 0H8M0-8V8" /></g> : null;
+              })()}
+            </svg>
+            <div className="map-scale" aria-hidden="true"><span /><small>Global simulation</small></div>
+            <p className="map-attribution">Map geometry: <a href="https://www.naturalearthdata.com/" target="_blank" rel="noreferrer">Natural Earth</a> via <a href="https://github.com/topojson/world-atlas" target="_blank" rel="noreferrer">world-atlas</a></p>
+          </div>
+        </section>
+
+        <aside className="flight-control-rail">
+          {selectedFlight ? <>
+            <section className="flight-detail" aria-labelledby="selected-flight-title">
+              <div className="flight-detail-heading">
+                <div><span className={`condition-tag condition-${selectedFlight.condition.toLowerCase()}`}>{titleCase(selectedFlight.condition)}</span><h3 id="selected-flight-title">{selectedFlight.tail_number}</h3><p>{selectedFlight.display_name}</p></div>
+                <span className="heading-gauge" style={{ '--heading': `${selectedFlight.heading_deg}deg` } as React.CSSProperties}><i aria-hidden="true" /><small>{Math.round(selectedFlight.heading_deg)}°</small></span>
+              </div>
+              <dl className="flight-facts">
+                <div><dt>Latitude</dt><dd>{formatCoordinate(selectedFlight.latitude, 'N', 'S')}</dd></div>
+                <div><dt>Longitude</dt><dd>{formatCoordinate(selectedFlight.longitude, 'E', 'W')}</dd></div>
+                <div><dt>Speed</dt><dd>{Math.round(selectedFlight.speed_kph)} km/h</dd></div>
+                <div><dt>Scenario time</dt><dd>{formatScenarioTime(selectedFlight.scenario_elapsed_ms, selectedFlight.scenario_duration_ms)}</dd></div>
+                <div><dt>Scope</dt><dd>{titleCase(selectedFlight.scope_type)}{selectedFlight.scope_type !== 'WORLD' ? ` / ${selectedFlight.scope_code}` : ''}</dd></div>
+                <div><dt>Access</dt><dd>{isAdmin ? 'Administrator' : titleCase(selectedFlight.current_user_access ?? 'VIEWER')}</dd></div>
+              </dl>
+              <div className="flight-scenario"><span>Recorded scenario</span><strong>{selectedFlight.scenario_label ?? titleCase(selectedFlight.scenario ?? 'Session demo')}</strong><small>{selectedFlight.run_id > 0 ? `Run #${selectedFlight.run_id}` : 'Session data'}</small></div>
+              <div className="flight-owner"><span>Owner</span><strong>{selectedFlight.owner_display_name}</strong><small>@{selectedFlight.owner_username}</small></div>
+              <div className="flight-control-actions">
+                {selectedFlight.can_manage && <button type="button" className="button secondary-button" disabled={busy} onClick={() => beginMove(selectedFlight)}>Move aircraft</button>}
+                {selectedFlight.can_remove && <button type="button" className="text-button danger-text" disabled={busy} onClick={() => void removeFlight(selectedFlight)}>Remove</button>}
+              </div>
+            </section>
+
+            <section className="flight-telemetry" aria-labelledby="flight-telemetry-title">
+              <div className="rail-section-heading"><div><p className="section-kicker">Scenario feed</p><h4 id="flight-telemetry-title">Telemetry</h4></div><span>{selectedFlight.telemetry.length}</span></div>
+              <div className="telemetry-snapshot-list">
+                {selectedFlight.telemetry.map((record, index) => <article key={`${record.subsystem}-${index}`}>
+                  <div><strong>{titleCase(record.subsystem)}</strong><span className={record.valid ? 'valid' : 'invalid'}>{record.valid ? record.health : 'Invalid'}</span></div>
+                  {record.reason && <p>{record.reason}</p>}
+                  <dl>{Object.entries(record.data).slice(0, 3).map(([key, value]) => <div key={key}><dt>{titleCase(key)}</dt><dd>{telemetryValue(value)}</dd></div>)}</dl>
+                </article>)}
+                {!selectedFlight.telemetry.length && <p className="empty-copy">No telemetry snapshot is attached to this flight.</p>}
+              </div>
+            </section>
+
+            <section className="flight-chat" aria-labelledby="flight-chat-title">
+              <div className="rail-section-heading"><div><p className="section-kicker">Crew room</p><h4 id="flight-chat-title">Flight chat</h4></div><span>{flightMessages.length}</span></div>
+              <div className="chat-message-list" aria-live="polite">
+                {flightMessages.map((message) => <article key={message.id} className={message.sender_user_id === currentUser.id ? 'own' : ''}>
+                  <div><strong>{message.sender_display_name}</strong><time dateTime={message.sent_at_utc}>{new Date(message.sent_at_utc).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</time></div>
+                  {message.share_type !== 'TEXT' && <span className="share-tag">{titleCase(message.share_type)} shared</span>}
+                  <p>{message.message}</p>
+                </article>)}
+                {!flightMessages.length && <p className="empty-copy">No messages in this simulated flight room.</p>}
+              </div>
+              {canSendChat ? <form className="chat-composer" onSubmit={postMessage}>
+                <label><span>Message</span><textarea rows={2} maxLength={500} value={messageText} onChange={(event) => setMessageText(event.target.value)} placeholder="Write to the flight room" required /></label>
+                <div><label><span className="sr-only">Share type</span><select aria-label="Share type" value={shareType} onChange={(event) => setShareType(event.target.value as ChatShareType)}>{CHAT_SHARE_TYPES.filter((type) => type !== 'TELEMETRY' || canShareTelemetry).map((type) => <option value={type} key={type}>{titleCase(type)}</option>)}</select></label><button type="submit" className="button primary-button" disabled={busy || !messageText.trim()}>Send</button></div>
+              </form> : <p className="chat-read-only">You have read-only access to this flight room.</p>}
+            </section>
+          </> : <div className="empty-entity"><strong>Select a simulated flight</strong><p>Telemetry, ownership and crew messages appear here.</p></div>}
+        </aside>
+      </div>
+    </div>
+  );
+}
