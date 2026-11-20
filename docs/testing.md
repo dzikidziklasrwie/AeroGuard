@@ -38,10 +38,10 @@ must not crash or silently become healthy.
 
 ### Bounded queue
 
-Test zero/unsupported capacity construction, FIFO order, empty pop, fill to the
-exact capacity, one additional push, and reuse after pop. Where concurrency is
-part of the implementation, use bounded deterministic coordination rather than
-timing-based sleeps.
+The queue rejects zero capacity with a compile-time `static_assert`. Runtime
+tests cover FIFO order, empty pop, fill to the exact capacity, one additional
+push, reuse after pop, blocking transfer, and close behaviour. The concurrency
+cases use bounded coordination rather than open-ended timing sleeps.
 
 ### Heartbeats and recovery
 
@@ -52,11 +52,11 @@ recovery path.
 
 ### Deterministic scenarios
 
-Run each scenario twice with identical configuration and compare ordered
-records byte-for-byte. Run a second seed for scenarios containing randomized
-variation and assert that their telemetry differs while remaining valid.
-Assert that every packaged default lasts from 40 to 55 seconds and that the
-JSONL metadata, manifest, importer, and frontend parser agree on its duration.
+Run the representative normal-operation scenario twice with identical
+configuration and compare its ordered records byte-for-byte. Assert that every
+packaged default lasts from 40 to 55 seconds and that the JSONL metadata,
+manifest, importer, and frontend parser agree on each duration. Different-seed
+property checks remain future work.
 
 ### Dashboard contract and automatic replay
 
@@ -73,8 +73,11 @@ and speed bounds, canonical `WORLD` code, permission-gated controls, 500
 character chat limit, owner-only telemetry sharing, and labelled memory-only
 fallback. Mock SignalR to check event registration and the REST resync after
 reconnection. Deliver an older update after a newer removal and verify that the
-marker stays removed. These component checks do not prove the nginx WebSocket
-path.
+marker stays removed. Place a marker at the polar/antimeridian boundary and
+assert that the SVG aircraft layer uses the projected sphere clip path, the
+label points inward, and an out-of-range live update produces no marker.
+Exercise a route-area and position update through the REST request shape. These
+component checks do not prove the nginx WebSocket path.
 
 ### Access and fleet rules
 
@@ -94,6 +97,11 @@ atomic chat-insert authorization, one-flight-per-aircraft uniqueness,
 mapped-aircraft status protection, the 500-row chat-retention trigger, and
 stale versions. Use controlled time for route movement, scenario-clock looping,
 and six-subsystem condition mapping.
+
+Sample `FlightMotion` across `WORLD`, `CONTINENT`, and `COUNTRY` routes from
+polar and antimeridian centers. Every sample must have finite latitude,
+longitude, and heading, with latitude from -85 to 85 and normalized longitude
+from -180 to 180.
 
 Hub tests cover anonymous rejection, bearer query-token scope, and removal of a
 revoked session from the recipient registry. Client tests cover reconnect
@@ -146,15 +154,15 @@ ctest --preset sanitizers --output-on-failure
   authentication, services, repositories, and SQLite constraints are covered
   together.
 
-The 2026-11-20 feature snapshot includes 45/45 native tests, 48/48 .NET tests,
-and 34/34 Vitest tests in 9 files. Frontend ESLint, TypeScript, the production
-build, and `npm audit` also passed; the audit reported 0 vulnerabilities. The
-earlier published revision supplied the MSVC/GCC, ASan/UBSan, clang-tidy,
-Docker, and hosted-CI evidence. The current feature's Docker images, health
-checks, authenticated browser map, nginx WebSocket handshake, and SignalR
-frames were verified locally. This browser check is manual; the current tests
-use no real SignalR WebSocket client end to end.
+The 2026-11-20 feature snapshot includes 45/45 native tests, 53/53 .NET test
+cases, and 37/37 Vitest tests in 9 files. Frontend ESLint, TypeScript, the
+production build, and `npm audit` also passed; the audit reported 0
+vulnerabilities. GitHub Actions run
+[`44812965465`](https://github.com/dzikidziklasrwie/AeroGuard/actions/runs/44812965465)
+passed the MSVC, GCC, ASan/UBSan, clang-tidy, frontend, API, and Docker jobs.
+The Docker images, health checks, authenticated browser map, nginx WebSocket
+handshake, and SignalR frames were also verified locally. This browser check is
+manual; the current tests use no real SignalR WebSocket client end to end.
 [TASKS.md](../TASKS.md) records frontend lint, typecheck, production build,
-dependency audit, exact tool versions, Docker smoke-test evidence, and
-remaining hosted checks. [The traceability matrix](traceability.md) maps
-requirements to test cases.
+dependency audit, exact tool versions, and Docker smoke-test evidence. [The
+traceability matrix](traceability.md) maps requirements to test cases.

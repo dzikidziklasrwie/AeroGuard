@@ -26,8 +26,8 @@ Choose the statement that best fits the job description:
 - Added GoogleTest coverage for transition rules, telemetry
   boundaries, queue behaviour, heartbeat timeouts, configuration errors,
   seeded replay, isolation, recovery, and 40-to-55-second packaged scenarios.
-  The current revision passed 45/45 native tests, 48/48 .NET tests, and 34/34
-  Vitest checks in 9 files.
+  The current revision passed 45/45 native tests, 53/53 .NET test cases, and
+  37/37 Vitest checks in 9 files.
 
 - Built an ASP.NET Core Minimal API that validates and imports C++ JSONL into
   SQLite, exposes run history through REST, and manages revocable bearer
@@ -36,12 +36,14 @@ Choose the statement that best fits the job description:
 
 - Connected the C++ producer to a TypeScript/React dashboard through REST with
   a packaged JSONL fallback, then added a Natural Earth operations map with
-  authorized SignalR updates and built a multi-stage Docker stack with nginx,
-  a non-root API image, and persistent SQLite storage.
+  bounded route coordinates, geometry-clipped markers, authorized SignalR
+  updates, and a multi-stage Docker stack with nginx, a non-root API image, and
+  persistent SQLite storage.
 
-These measured results are from local runs on 2026-11-20. The repository
-contains a GitHub Actions workflow, but don't call hosted CI "passing" until it
-has run on the published revision.
+These measured results are from local runs on 2026-11-20. GitHub Actions run
+[`44812965465`](https://github.com/dzikidziklasrwie/AeroGuard/actions/runs/44812965465)
+passed all seven MSVC, GCC, analysis, frontend, API, and Docker jobs on the
+feature branch.
 
 ## Tech stack line
 
@@ -56,6 +58,7 @@ ASan/UBSan, clang-tidy
 |---|---|
 | `docs/assets/aeroguard-hero.png` | Generated concept art. `docs/assets/README.md` records the exact prompt and tool. |
 | `docs/assets/dashboard-preview.png` | Browser capture of the production container using C++-generated replay data. |
+| `docs/assets/operations-map-preview.png` | Authenticated browser capture of three API-backed simulated flights in the Docker stack. |
 
 ## GitHub description
 
