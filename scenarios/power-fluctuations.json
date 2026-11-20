@@ -1,13 +1,13 @@
 {
   "name": "power-fluctuations",
-  "description": "Supply voltage alternates between low and high limits for three seconds, then recovers.",
-  "duration_ms": 9000,
+  "description": "Supply voltage alternates between low and high limits for sixteen seconds, then recovers.",
+  "duration_ms": 45000,
   "faults": [
     {
       "type": "power_fluctuation",
       "subsystem": "power",
-      "start_ms": 2000,
-      "duration_ms": 3000,
+      "start_ms": 10000,
+      "duration_ms": 16000,
       "magnitude": 0.7
     }
   ]

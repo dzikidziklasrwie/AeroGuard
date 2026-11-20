@@ -32,6 +32,8 @@ public sealed class ArtifactImporterTests : IDisposable
         Assert.Equal(0, second.Imported);
         Assert.Equal(7, second.Skipped);
         Assert.Equal(7, await repository.CountRunsAsync(CancellationToken));
+        var runs = await repository.GetRunsAsync(null, null, 10, CancellationToken);
+        Assert.All(runs, run => Assert.InRange(run.DurationMs, 40_000, 55_000));
     }
 
     [Fact]
