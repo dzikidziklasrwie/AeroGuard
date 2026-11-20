@@ -5,8 +5,9 @@
 AeroGuard is a local full-stack educational simulation. A C++20 producer makes
 each health decision once and writes versioned JSON Lines. An ASP.NET Core API
 validates and archives those artifacts in SQLite. React presents recorded
-results and provides an authenticated workspace for accounts and aircraft.
-Neither the API nor React recalculates subsystem health.
+results and an authenticated world map for simulated flights, accounts, and
+aircraft. The API selects stored C++ telemetry for the map but does not
+evaluate sensor thresholds or state transitions. React does neither.
 
 ```mermaid
 flowchart LR
@@ -17,9 +18,9 @@ flowchart LR
     Core[[C++20 AeroGuard simulator]]
     Replay[(Schema v1 JSONL + manifest)]
     Importer[[Validated artifact importer]]
-    Database[(SQLite archive and access data)]
-    API[[ASP.NET Core REST API]]
-    UI[[React dashboard and workspace]]
+    Database[(SQLite archive, access, and operations data)]
+    API[[ASP.NET Core REST + SignalR API]]
+    UI[[React replay and operations dashboard]]
     Report[(Downloaded report)]
 
     Reviewer -->|selects scenario, seed, clock| Core
@@ -28,11 +29,13 @@ flowchart LR
     Replay --> Importer
     Importer --> Database
     Database <--> API
-    API <--> UI
+    API -->|REST snapshots| UI
+    API -->|SignalR updates| UI
+    UI -->|authorized writes| API
     Replay -. static fallback .-> UI
     Reviewer -->|automatic replay and filters| UI
-    Admin -->|users, roles, assignments| UI
-    User -->|assigned aircraft| UI
+    Admin -->|users, roles, permissions, flights| UI
+    User -->|assigned aircraft, flight chat| UI
     UI -->|derived presentation summary| Report
 ```
 
@@ -86,6 +89,7 @@ flowchart TB
 | `backend/src/AeroGuard.Api/Endpoints` | HTTP route definitions and DTO responses | Delegates permission and data rules |
 | `backend/src/AeroGuard.Api/Identity` | Password checks, bearer sessions, role and account rules | Never returns password or token hashes |
 | `backend/src/AeroGuard.Api/Fleet` | Aircraft visibility, assignments, versions, and audit | Does not contain simulation health policy |
+| `backend/src/AeroGuard.Api/Operations` | Flight authorization, synthetic map motion, stored telemetry selection, chat, and SignalR delivery | Does not evaluate fictional sensor thresholds or C++ state transitions |
 | `backend/src/AeroGuard.Api/Data` | SQLite connection and schema initialization | All values pass through parameters |
 
 ## One simulation tick
@@ -168,7 +172,7 @@ events.
       "label": "Normal operation",
       "description": "All six fictional subsystems remain within nominal operating limits.",
       "file": "normal-operation.jsonl",
-      "duration_ms": 8000,
+      "duration_ms": 40000,
       "tick_ms": 100,
       "final_state": "NORMAL"
     }
@@ -206,6 +210,59 @@ The dashboard requests `/api/scenarios` first. If no API is reachable during a
 static-only demonstration, it loads `/data/manifest.json` and the packaged
 JSONL files. Both paths use the same strict parser.
 
+## Simulated operations flow
+
+An authenticated browser loads active flights through REST, connects to
+`/hubs/operations`, and receives `flight_updated`, `flight_removed`, and
+`message_posted` events. The browser reloads the REST snapshot after a SignalR
+reconnection. If the hub cannot connect, it polls the REST snapshot every five
+seconds. Per-flight event sequences stop an older delayed update from restoring
+a marker after a newer removal.
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant A as Operations API
+    participant D as SQLite
+    participant H as SignalR hub
+
+    B->>A: GET visible flights and effective permissions
+    A->>D: read assignments, flights, run records
+    D-->>A: authorized rows
+    A-->>B: REST snapshot
+    B->>H: connect with bearer session
+    loop nominally once per second
+        A->>D: read active flights and current recipients
+        A->>A: calculate synthetic position and select stored telemetry
+        A->>A: recheck each connection session
+        A-->>H: authorized flight snapshots
+        H-->>B: flight_updated
+    end
+    B->>A: reload snapshot after reconnect
+```
+
+The route position and scenario clock are separate. `FlightMotion` advances a
+synthetic circular route at 120 times the displayed aircraft speed so movement
+is visible during a short demonstration. The scenario clock advances at
+wall-clock speed, reads the archived C++ telemetry for the matching virtual
+tick, and returns to zero after the recorded 40 to 55 second duration. The API
+maps recorded subsystem health to a map condition but does not apply sensor
+limits or C++ state-transition rules.
+
+SQLite stores one `active_flights` row per aircraft, per-account
+`user_operation_permissions`, and `flight_messages`. A flight references one
+archived run. A database trigger keeps the latest 500 messages per flight, and
+deleting the flight deletes those chat rows. A mapped aircraft must remain
+`ACTIVE` until the flight is removed. The map geometry comes from the packaged
+Natural Earth `world-atlas` data and requires no map tile service. When the
+operations API cannot load, React labels its temporary memory-only state as a
+session demo.
+
+Chat authorization and insertion share one SQL statement, so an assignment or
+permission cannot be revoked between a separate check and the write. During a
+broadcast cycle, an exception for one flight is logged and the broadcaster
+continues with the remaining flights.
+
 ## Identity and fleet boundaries
 
 Passwords use ASP.NET Core's password hasher. Login creates a random opaque
@@ -227,18 +284,26 @@ flowchart LR
     Service --> Audit[(Audit log)]
 ```
 
-Built-in roles describe application permissions:
+Built-in roles provide application permissions and operation defaults:
 
-| Role | Account and role administration | Aircraft access |
+| Role | Account and fleet access | Operation default |
 |---|---|---|
-| `Admin` | Full management and audit read | All aircraft, assignments, updates, and deletion |
-| `Operator` | None | Create aircraft; update assigned aircraft as `OWNER` or `MAINTAINER` |
-| `Viewer` | None | Read assigned aircraft |
+| `Admin` | Full management, audit read, and all aircraft | Bypasses all five operation checks |
+| `Operator` | Create aircraft; update assigned aircraft as `OWNER` or `MAINTAINER` | All five operation permissions |
+| `Viewer` | Read assigned aircraft | `CHAT_SEND` |
 
 Aircraft assignment levels are separate from roles. `OWNER`, `MAINTAINER`,
 and `VIEWER` define access to one aircraft. Services protect the final active
 administrator and the final aircraft owner. Aircraft updates use an expected
 version so concurrent edits cannot silently overwrite each other.
+
+Operation permissions are per-account overrides layered on aircraft
+assignments. A non-administrator must hold `OWNER` plus the matching place,
+reconfigure, or remove permission. Any active assigned user can view the
+flight. Telemetry sharing requires `OWNER`, `CHAT_SEND`, and
+`TELEMETRY_SHARE`. Custom roles supply no operation default. See
+[Security and authorization rules](security-and-authorization.md) for the
+complete matrix and SignalR session checks.
 
 ## Ownership and predictability
 
@@ -266,7 +331,7 @@ flowchart LR
     Data --> API
     API --> SQLite[(Local SQLite)]
     NPM[npm + Vite] --> Browser[Local dashboard]
-    Browser --> API
+    Browser -->|REST + proxied SignalR| API
     Data -. fallback .-> Browser
 ```
 
@@ -274,10 +339,16 @@ flowchart LR
 
 The multi-stage image builds the C++ producer, generates seeded scenario data,
 publishes the .NET API, and builds the React bundle. Compose starts an API
-container with a named SQLite volume and an nginx container that serves React
-and proxies `/api`. The runtime images contain none of the C++, Node.js, or
-.NET SDK toolchains. The administrator password enters through the local
-environment and is absent from image layers and Git.
+container with a named SQLite volume and an nginx container that serves React,
+proxies `/api`, and upgrades `/hubs/operations` to WebSocket. nginx disables
+access logging for `/hubs/` because the browser transport can put the bearer
+token in the query string. The direct API host port binds to
+`127.0.0.1:8081`, while nginx binds to `127.0.0.1:8080`. Compose enables one trusted
+forwarded-header hop from nginx to the API. The runtime images contain none of
+the C++, Node.js, or .NET SDK toolchains. The administrator password enters
+through the local environment and is absent from image layers and Git. Compose
+synchronizes it with the configured account at API startup and revokes older
+sessions when the hash changes.
 
 ## Safety and trust boundary
 
@@ -286,3 +357,8 @@ interfaces, operational parameters, threat data, weapons, countermeasures, or
 confidential information. AeroGuard has no certification and makes no claim of
 deterministic execution deadlines, airworthiness, or suitability for physical
 control.
+
+The connection registry is process memory. This design targets one local API
+instance and does not coordinate SignalR connections across replicas.
+Recipient-specific snapshot creation is intended for a small demonstrator, not
+a distributed or high-volume fleet.

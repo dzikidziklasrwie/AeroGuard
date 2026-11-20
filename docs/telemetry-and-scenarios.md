@@ -91,15 +91,20 @@ active interval is half-open: `[start_ms, start_ms + duration_ms)`.
 
 | Scenario | Duration | Scheduled fault intervals |
 |---|---:|---|
-| `normal-operation` | 8,000 ms | None |
-| `communication-interruption` | 8,000 ms | Communications missing from 2,000 to 4,000 ms |
-| `invalid-sensor-data` | 8,000 ms | Invalid temperature input from 2,000 to 3,800 ms |
-| `simulated-overheating` | 9,000 ms | Temperature overheat from 2,500 to 5,000 ms |
-| `power-fluctuations` | 9,000 ms | Power fluctuation from 2,000 to 5,000 ms |
-| `multiple-subsystem-failures` | 11,000 ms | Communications 1,800-4,800; cooling 2,400-6,400; computer 3,000-7,500; equipment 3,500-8,500 ms |
-| `recovery-after-temporary-failure` | 8,000 ms | Communications missing from 2,000 to 3,500 ms |
+| `normal-operation` | 40,000 ms | None |
+| `communication-interruption` | 45,000 ms | Communications missing from 10,000 to 22,000 ms |
+| `invalid-sensor-data` | 45,000 ms | Invalid temperature input from 10,000 to 20,000 ms |
+| `simulated-overheating` | 45,000 ms | Temperature overheat from 10,000 to 25,000 ms |
+| `power-fluctuations` | 45,000 ms | Power fluctuation from 10,000 to 26,000 ms |
+| `multiple-subsystem-failures` | 55,000 ms | Communications 8,000-26,000; cooling 12,000-34,000; computer 16,000-40,000; equipment 18,000-44,000 ms |
+| `recovery-after-temporary-failure` | 45,000 ms | Communications missing from 10,000 to 18,000 ms |
 
 The default tick is 100 ms and seed is 42. CLI overrides apply to seed, tick,
 and total duration. Scenario parsing rejects negative starts, non-positive fault
 durations or magnitudes, non-finite magnitudes, unknown subsystem/fault names,
 and faults extending beyond the scenario duration.
+
+The operations map plays the selected archived scenario at wall-clock speed
+and returns to timestamp zero after the recorded duration. Map motion uses a
+separate accelerated display clock, so an aircraft can cross a visible part of
+the map while its 40 to 55 second telemetry scenario loops.
