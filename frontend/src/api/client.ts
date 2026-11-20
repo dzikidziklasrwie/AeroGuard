@@ -5,7 +5,12 @@ import type {
   AircraftInput,
   AircraftRecord,
   AuditRecord,
+  ChatMessageRecord,
+  ChatShareType,
   CreateUserInput,
+  FlightInput,
+  FlightRecord,
+  OperationPermission,
   LoginResponse,
   RoleRecord,
   UserAccount,
@@ -157,3 +162,59 @@ export const deleteRole = (token: string, roleId: number) =>
 
 export const getAudit = (token: string, signal?: AbortSignal) =>
   request<AuditRecord[]>('/api/admin/audit?limit=50', { token, signal });
+
+export const getOperationFlights = (token: string, signal?: AbortSignal) =>
+  request<FlightRecord[]>('/api/operations/flights', { token, signal });
+
+export const createOperationFlight = (token: string, input: FlightInput) =>
+  request<FlightRecord>('/api/operations/flights', { method: 'POST', token, body: input });
+
+export const updateOperationFlight = (token: string, flight: FlightRecord, input: FlightInput) =>
+  request<FlightRecord>(`/api/operations/flights/${flight.id}`, {
+    method: 'PUT',
+    token,
+    body: { ...input, expected_version: flight.version },
+  });
+
+export const deleteOperationFlight = (token: string, flightId: number) =>
+  request<void>(`/api/operations/flights/${flightId}`, { method: 'DELETE', token });
+
+export const getOperationMessages = (token: string, flightId: number, signal?: AbortSignal) =>
+  request<ChatMessageRecord[]>(`/api/operations/flights/${flightId}/messages?limit=100`, { token, signal });
+
+export const sendOperationMessage = (
+  token: string,
+  flightId: number,
+  message: string,
+  shareType: ChatShareType,
+) => request<ChatMessageRecord>(`/api/operations/flights/${flightId}/messages`, {
+  method: 'POST',
+  token,
+  body: { message, share_type: shareType },
+});
+
+type PermissionResponse = OperationPermission[] | { permissions: OperationPermission[] };
+
+function permissionList(response: PermissionResponse): OperationPermission[] {
+  return Array.isArray(response) ? response : response.permissions;
+}
+
+export async function getOperationPermissions(token: string, signal?: AbortSignal) {
+  return permissionList(await request<PermissionResponse>('/api/operations/permissions', { token, signal }));
+}
+
+export async function getUserOperationPermissions(token: string, userId: number, signal?: AbortSignal) {
+  return permissionList(await request<PermissionResponse>(`/api/admin/users/${userId}/permissions`, { token, signal }));
+}
+
+export async function replaceUserOperationPermissions(
+  token: string,
+  userId: number,
+  permissions: OperationPermission[],
+) {
+  return permissionList(await request<PermissionResponse>(`/api/admin/users/${userId}/permissions`, {
+    method: 'PUT',
+    token,
+    body: { permissions },
+  }));
+}
