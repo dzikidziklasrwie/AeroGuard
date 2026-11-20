@@ -206,7 +206,7 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Restore locked project dependencies
+      - name: Restore project dependencies
         run: dotnet restore backend/AeroGuard.Backend.sln
 
       - name: Build with release settings
@@ -231,13 +231,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     needs: [cpp, frontend, backend]
-    env:
-      AEROGUARD_ADMIN_PASSWORD: Ci-Only-Admin-Password-42!
     steps:
       - name: Check out source
         uses: actions/checkout@v7
         with:
           persist-credentials: false
+
+      - name: Generate smoke-test password
+        shell: bash
+        run: |
+          admin_password="$(openssl rand -hex 24)"
+          echo "::add-mask::$admin_password"
+          echo "AEROGUARD_ADMIN_PASSWORD=$admin_password" >> "$GITHUB_ENV"
 
       - name: Validate Compose configuration
         run: docker compose config --quiet
@@ -265,10 +270,12 @@ jobs:
             exit 1
           fi
 
+          login_payload="$(python3 -c \
+            'import json, os; print(json.dumps({"username": "admin", "password": os.environ["AEROGUARD_ADMIN_PASSWORD"]}))')"
           login_response="$(curl --fail --silent \
             --request POST \
             --header 'Content-Type: application/json' \
-            --data '{"username":"admin","password":"Ci-Only-Admin-Password-42!"}' \
+            --data "$login_payload" \
             http://127.0.0.1:8080/api/auth/login)"
           access_token="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])' \
             <<<"$login_response")"
