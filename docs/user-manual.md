@@ -231,7 +231,7 @@ Scope codes use these rules:
 |---|---|
 | `WORLD` | The API stores the canonical `WORLD` code; the UI displays `World`. |
 | `CONTINENT` | `AF`, `AN`, `AS`, `EU`, `NA`, `OC`, or `SA`. |
-| `COUNTRY` | A real ISO 3166-1 alpha-3 code, such as `POL`. |
+| `COUNTRY` | A real ISO 3166-1 alpha-3 code, such as `POL DNK USA`. |
 
 Only an administrator or an owner with `FLIGHT_RECONFIGURE_OWN` sees the move
 control. Only an administrator or an owner with `FLIGHT_REMOVE_OWN` sees the
