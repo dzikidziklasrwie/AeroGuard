@@ -49,6 +49,8 @@ const path = geoPath(projection);
 const spherePath = path({ type: 'Sphere' }) ?? '';
 const countriesPath = path(countries) ?? '';
 const graticulePath = path(geoGraticule10()) ?? '';
+const MARKER_LABEL_WIDTH = 76;
+const MARKER_LABEL_GAP = 12;
 
 const DEMO_COORDINATES = [
   { latitude: 52.23, longitude: 21.01 },
@@ -189,6 +191,21 @@ function flightInputFromDraft(draft: PlacementDraft): FlightInput | null {
     longitude,
     speed_kph: speedKph,
   };
+}
+
+function projectCoordinate(latitude: number, longitude: number): [number, number] | null {
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  if (latitude < -85 || latitude > 85 || longitude < -180 || longitude > 180) return null;
+  const point = projection([longitude, latitude]);
+  return point && point.every(Number.isFinite) ? point : null;
+}
+
+function markerLabelTransform([x, y]: [number, number]): string {
+  const labelX = x > MAP_WIDTH / 2
+    ? -(MARKER_LABEL_WIDTH + MARKER_LABEL_GAP)
+    : MARKER_LABEL_GAP;
+  const labelY = y < 48 ? MARKER_LABEL_GAP : -14;
+  return `translate(${labelX} ${labelY})`;
 }
 
 function telemetryValue(value: unknown): string {
@@ -629,35 +646,38 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [], onUnaut
               <defs>
                 <radialGradient id="ocean-glow" cx="50%" cy="42%" r="68%"><stop offset="0%" stopColor="#102c3b" /><stop offset="100%" stopColor="#07131d" /></radialGradient>
                 <filter id="marker-glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="5" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
+                <clipPath id="operations-map-sphere-clip" clipPathUnits="userSpaceOnUse"><path d={spherePath} /></clipPath>
               </defs>
               <path className="map-sphere" d={spherePath} />
               <path className="map-graticule" d={graticulePath} />
               <path className="map-countries" d={countriesPath} />
-              {flights.map((flight) => {
-                const point = projection([flight.longitude, flight.latitude]);
-                if (!point) return null;
-                const active = flight.id === selectedFlight?.id;
-                return <g
-                  key={flight.id}
-                  className={`aircraft-marker marker-${flight.condition.toLowerCase()}${active ? ' active' : ''}`}
-                  transform={`translate(${point[0]} ${point[1]})`}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={`${flight.tail_number}, simulated position ${formatCoordinate(flight.latitude, 'N', 'S')}, ${formatCoordinate(flight.longitude, 'E', 'W')}`}
-                  onClick={(event) => { event.stopPropagation(); setSelectedFlightId(flight.id); }}
-                  onKeyDown={(event) => selectMarker(flight.id, event)}
-                >
-                  <circle className="marker-pulse" r={active ? 18 : 13} />
-                  <circle className="marker-core" r={active ? 7 : 5.5} />
-                  <path className="marker-aircraft" d="M0 -8 L3 -1 L9 2 L9 4 L3 3 L2 8 L-2 8 L-3 3 L-9 4 L-9 2 L-3 -1 Z" transform={`rotate(${flight.heading_deg})`} />
-                  <g className="marker-label" transform="translate(12 -14)"><rect width="76" height="25" rx="4" /><text x="9" y="17">{flight.tail_number}</text></g>
-                </g>;
-              })}
-              {placement && flightInputFromDraft(placement) && (() => {
-                const draft = flightInputFromDraft(placement);
-                const point = draft ? projection([draft.longitude, draft.latitude]) : null;
-                return point ? <g className="draft-marker" transform={`translate(${point[0]} ${point[1]})`} aria-hidden="true"><circle r="14" /><path d="M-8 0H8M0-8V8" /></g> : null;
-              })()}
+              <g className="map-aircraft-layer" clipPath="url(#operations-map-sphere-clip)">
+                {flights.map((flight) => {
+                  const point = projectCoordinate(flight.latitude, flight.longitude);
+                  if (!point) return null;
+                  const active = flight.id === selectedFlight?.id;
+                  return <g
+                    key={flight.id}
+                    className={`aircraft-marker marker-${flight.condition.toLowerCase()}${active ? ' active' : ''}`}
+                    transform={`translate(${point[0]} ${point[1]})`}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`${flight.tail_number}, simulated position ${formatCoordinate(flight.latitude, 'N', 'S')}, ${formatCoordinate(flight.longitude, 'E', 'W')}`}
+                    onClick={(event) => { event.stopPropagation(); setSelectedFlightId(flight.id); }}
+                    onKeyDown={(event) => selectMarker(flight.id, event)}
+                  >
+                    <circle className="marker-pulse" r={active ? 18 : 13} />
+                    <circle className="marker-core" r={active ? 7 : 5.5} />
+                    <path className="marker-aircraft" d="M0 -8 L3 -1 L9 2 L9 4 L3 3 L2 8 L-2 8 L-3 3 L-9 4 L-9 2 L-3 -1 Z" transform={`rotate(${flight.heading_deg})`} />
+                    <g className="marker-label" transform={markerLabelTransform(point)}><rect width={MARKER_LABEL_WIDTH} height="25" rx="4" /><text x="9" y="17">{flight.tail_number}</text></g>
+                  </g>;
+                })}
+                {placement && flightInputFromDraft(placement) && (() => {
+                  const draft = flightInputFromDraft(placement);
+                  const point = draft ? projectCoordinate(draft.latitude, draft.longitude) : null;
+                  return point ? <g className="draft-marker" transform={`translate(${point[0]} ${point[1]})`} aria-hidden="true"><circle r="14" /><path d="M-8 0H8M0-8V8" /></g> : null;
+                })()}
+              </g>
             </svg>
             <div className="map-scale" aria-hidden="true"><span /><small>Global simulation</small></div>
             <p className="map-attribution">Map geometry: <a href="https://www.naturalearthdata.com/" target="_blank" rel="noreferrer">Natural Earth</a> via <a href="https://github.com/topojson/world-atlas" target="_blank" rel="noreferrer">world-atlas</a></p>
