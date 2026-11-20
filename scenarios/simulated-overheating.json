@@ -1,13 +1,13 @@
 {
   "name": "simulated-overheating",
-  "description": "Synthetic temperature readings cross the fault threshold for 2.5 seconds, then cool down.",
-  "duration_ms": 9000,
+  "description": "Synthetic temperature readings cross the fault threshold for fifteen seconds, then cool down.",
+  "duration_ms": 45000,
   "faults": [
     {
       "type": "overheating",
       "subsystem": "temperature",
-      "start_ms": 2500,
-      "duration_ms": 2500,
+      "start_ms": 10000,
+      "duration_ms": 15000,
       "magnitude": 1.0
     }
   ]
