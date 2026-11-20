@@ -33,6 +33,38 @@ public sealed class BootstrapAdminService(
                 logger.LogWarning("Bootstrap account existed without Admin role; the role was restored");
             }
 
+            if (options.SyncAdminPassword)
+            {
+                var synchronizedPassword = ValidateConfiguredPassword();
+                var verification = passwordHasher.VerifyHashedPassword(
+                    existing,
+                    existing.PasswordHash,
+                    synchronizedPassword);
+                if (verification != PasswordVerificationResult.Success)
+                {
+                    var synchronizedAt = timeProvider.GetUtcNow();
+                    var synchronizedPasswordHash = passwordHasher.HashPassword(
+                        existing,
+                        synchronizedPassword);
+                    await repository.SetPasswordHashAsync(
+                        existing.Id,
+                        synchronizedPasswordHash,
+                        synchronizedAt,
+                        cancellationToken);
+                    await auditRepository.AppendAsync(
+                        null,
+                        "user.bootstrap.password.sync",
+                        "user",
+                        existing.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                        new { existing.Username },
+                        synchronizedAt,
+                        cancellationToken);
+                    logger.LogInformation(
+                        "Bootstrap administrator {Username} password synchronized from runtime configuration",
+                        username);
+                }
+            }
+
             return;
         }
 
@@ -44,15 +76,7 @@ public sealed class BootstrapAdminService(
             return;
         }
 
-        var allowWeak = options.AllowWeakDevelopmentPassword
-            && (environment.IsDevelopment() || environment.IsEnvironment("Testing"));
-        if (options.AllowWeakDevelopmentPassword && !allowWeak)
-        {
-            throw new InvalidOperationException(
-                "Weak bootstrap passwords are allowed only in Development or Testing.");
-        }
-
-        var password = CredentialRules.ValidatePassword(options.AdminPassword, allowWeak);
+        var password = ValidateConfiguredPassword();
         var now = timeProvider.GetUtcNow();
         var draft = new UserAccount(
             0,
@@ -80,5 +104,24 @@ public sealed class BootstrapAdminService(
             now,
             cancellationToken);
         logger.LogInformation("Bootstrap administrator {Username} created", username);
+    }
+
+    private string ValidateConfiguredPassword()
+    {
+        if (string.IsNullOrEmpty(options.AdminPassword))
+        {
+            throw new InvalidOperationException(
+                "AEROGUARD_ADMIN_PASSWORD is required when administrator password synchronization is enabled.");
+        }
+
+        var allowWeak = options.AllowWeakDevelopmentPassword
+            && (environment.IsDevelopment() || environment.IsEnvironment("Testing"));
+        if (options.AllowWeakDevelopmentPassword && !allowWeak)
+        {
+            throw new InvalidOperationException(
+                "Weak bootstrap passwords are allowed only in Development or Testing.");
+        }
+
+        return CredentialRules.ValidatePassword(options.AdminPassword, allowWeak);
     }
 }

@@ -1,5 +1,6 @@
 using AeroGuard.Api.Contracts;
 using AeroGuard.Api.Identity;
+using AeroGuard.Api.Operations;
 
 namespace AeroGuard.Api.Endpoints;
 
@@ -88,6 +89,34 @@ public static class AdministrationEndpoints
             .WithSummary("Set a new password and revoke the user's sessions")
             .Produces(StatusCodes.Status204NoContent)
             .ProducesProblem(StatusCodes.Status400BadRequest);
+
+        group.MapGet("/users/{id:long:min(1)}/permissions", async (
+            long id,
+            OperationPermissionService permissions,
+            CancellationToken cancellationToken) =>
+            Results.Ok(await permissions.GetForUserAsync(id, cancellationToken)))
+            .WithName("GetUserOperationPermissions")
+            .WithSummary("List effective map and chat permissions for a user")
+            .Produces<OperationPermissionsDto>()
+            .ProducesProblem(StatusCodes.Status404NotFound);
+
+        group.MapPut("/users/{id:long:min(1)}/permissions", async (
+            long id,
+            HttpContext context,
+            ReplaceOperationPermissionsRequest request,
+            OperationPermissionService permissions,
+            CancellationToken cancellationToken) =>
+            Results.Ok(await permissions.ReplaceAsync(
+                CurrentUser.FromPrincipal(context.User),
+                id,
+                request,
+                cancellationToken)))
+            .WithName("ReplaceUserOperationPermissions")
+            .WithSummary("Replace a user's map and chat permission overrides")
+            .Produces<OperationPermissionsDto>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status404NotFound)
+            .RequireRateLimiting("operations-write");
 
         group.MapGet("/roles", async (
             AccountAdministrationService accounts,

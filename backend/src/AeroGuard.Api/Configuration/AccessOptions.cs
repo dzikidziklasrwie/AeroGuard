@@ -3,6 +3,7 @@ namespace AeroGuard.Api.Configuration;
 public sealed record AccessOptions(
     string AdminUsername,
     string? AdminPassword,
+    bool SyncAdminPassword,
     bool AllowWeakDevelopmentPassword,
     TimeSpan SessionLifetime)
 {
@@ -20,6 +21,10 @@ public sealed record AccessOptions(
             configuration["AEROGUARD_ALLOW_WEAK_DEVELOPMENT_PASSWORD"],
             out var parsedAllowWeak)
             && parsedAllowWeak;
+        var syncAdminPassword = bool.TryParse(
+            configuration["AEROGUARD_SYNC_ADMIN_PASSWORD"],
+            out var parsedSyncAdminPassword)
+            && parsedSyncAdminPassword;
 
         var sessionHours = int.TryParse(
             configuration["AEROGUARD_SESSION_HOURS"],
@@ -34,6 +39,7 @@ public sealed record AccessOptions(
         return new AccessOptions(
             username,
             configuration["AEROGUARD_ADMIN_PASSWORD"],
+            syncAdminPassword,
             allowWeak,
             TimeSpan.FromHours(sessionHours));
     }

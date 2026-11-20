@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Security.Claims;
 using AeroGuard.Api.Configuration;
 using AeroGuard.Api.Contracts;
 using AeroGuard.Api.Data;
@@ -8,15 +9,30 @@ using AeroGuard.Api.Fleet;
 using AeroGuard.Api.Identity;
 using AeroGuard.Api.Import;
 using AeroGuard.Api.Models;
+using AeroGuard.Api.Operations;
 using AeroGuard.Api.Validation;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
 using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
+var trustProxyHeaders = builder.Configuration.GetValue<bool>("AEROGUARD_TRUST_PROXY_HEADERS");
 
 builder.WebHost.ConfigureKestrel(options => options.AddServerHeader = false);
+builder.Logging.AddFilter("Microsoft.AspNetCore.Hosting.Diagnostics", LogLevel.Warning);
+if (trustProxyHeaders)
+{
+    builder.Services.Configure<ForwardedHeadersOptions>(options =>
+    {
+        options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+        options.ForwardLimit = 1;
+        options.KnownIPNetworks.Clear();
+        options.KnownProxies.Clear();
+    });
+}
+
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower;
@@ -31,6 +47,36 @@ builder.Services.AddRateLimiter(options =>
     options.AddPolicy("login", context =>
         RateLimitPartition.GetFixedWindowLimiter(
             context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                AutoReplenishment = true,
+                PermitLimit = 30,
+                QueueLimit = 0,
+                Window = TimeSpan.FromMinutes(1),
+            }));
+    options.AddPolicy("operations-write", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            RateLimitKey(context),
+            _ => new FixedWindowRateLimiterOptions
+            {
+                AutoReplenishment = true,
+                PermitLimit = 90,
+                QueueLimit = 0,
+                Window = TimeSpan.FromMinutes(1),
+            }));
+    options.AddPolicy("operations-chat", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            RateLimitKey(context),
+            _ => new FixedWindowRateLimiterOptions
+            {
+                AutoReplenishment = true,
+                PermitLimit = 60,
+                QueueLimit = 0,
+                Window = TimeSpan.FromMinutes(1),
+            }));
+    options.AddPolicy("operations-hub", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            RateLimitKey(context),
             _ => new FixedWindowRateLimiterOptions
             {
                 AutoReplenishment = true,
@@ -60,12 +106,25 @@ builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IIdentityRepository, IdentityRepository>();
 builder.Services.AddSingleton<IAuditRepository, AuditRepository>();
 builder.Services.AddSingleton<IAircraftRepository, AircraftRepository>();
+builder.Services.AddSingleton<IOperationsRepository, OperationsRepository>();
 builder.Services.AddSingleton<IPasswordHasher<UserAccount>, PasswordHasher<UserAccount>>();
 builder.Services.AddSingleton<IAccessTokenIssuer, SecureAccessTokenIssuer>();
 builder.Services.AddSingleton<AeroGuard.Api.Identity.AuthenticationService>();
 builder.Services.AddSingleton<AccountAdministrationService>();
 builder.Services.AddSingleton<BootstrapAdminService>();
 builder.Services.AddSingleton<AircraftService>();
+builder.Services.AddSingleton<OperationPermissionService>();
+builder.Services.AddSingleton<FlightSnapshotFactory>();
+builder.Services.AddSingleton<OperationsBroadcaster>();
+builder.Services.AddSingleton<OperationsConnectionRegistry>();
+builder.Services.AddSingleton<OperationsService>();
+builder.Services.AddHostedService<FlightSimulationWorker>();
+builder.Services.AddSignalR()
+    .AddJsonProtocol(options =>
+    {
+        options.PayloadSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower;
+        options.PayloadSerializerOptions.DictionaryKeyPolicy = JsonNamingPolicy.SnakeCaseLower;
+    });
 builder.Services
     .AddAuthentication(BearerTokenAuthenticationHandler.SchemeName)
     .AddScheme<AuthenticationSchemeOptions, BearerTokenAuthenticationHandler>(
@@ -76,6 +135,11 @@ builder.Services.AddAuthorizationBuilder()
 
 var app = builder.Build();
 
+if (trustProxyHeaders)
+{
+    app.UseForwardedHeaders();
+}
+
 app.UseExceptionHandler();
 app.Use(async (context, next) =>
 {
@@ -85,8 +149,8 @@ app.Use(async (context, next) =>
     context.Response.Headers["Content-Security-Policy"] = "default-src 'none'; frame-ancestors 'none'";
     await next();
 });
-app.UseRateLimiter();
 app.UseAuthentication();
+app.UseRateLimiter();
 app.UseAuthorization();
 
 app.MapOpenApi();
@@ -264,6 +328,9 @@ app.MapGet("/api/runs/{id:long:min(1)}/records", async Task<IResult> (
 app.MapAuthenticationEndpoints();
 app.MapAdministrationEndpoints();
 app.MapAircraftEndpoints();
+app.MapOperationsEndpoints();
+app.MapHub<OperationsHub>("/hubs/operations")
+    .RequireRateLimiting("operations-hub");
 
 app.Run();
 
@@ -303,5 +370,10 @@ static RunDetailDto ToRunDetailDto(StoredRun run) =>
         run.ImportedAtUtc,
         ReplayUrl(run.Id),
         RecordsUrl(run.Id));
+
+static string RateLimitKey(HttpContext context) =>
+    context.User.FindFirstValue(ClaimTypes.NameIdentifier)
+    ?? context.Connection.RemoteIpAddress?.ToString()
+    ?? "unknown";
 
 public partial class Program;

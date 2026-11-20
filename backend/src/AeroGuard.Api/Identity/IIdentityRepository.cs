@@ -58,6 +58,11 @@ public interface IIdentityRepository
         DateTimeOffset now,
         CancellationToken cancellationToken = default);
 
+    Task<bool> IsSessionActiveAsync(
+        long sessionId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default);
+
     Task<bool> RevokeSessionAsync(
         long sessionId,
         DateTimeOffset revokedAt,
