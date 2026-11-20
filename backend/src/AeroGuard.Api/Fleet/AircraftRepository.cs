@@ -168,7 +168,16 @@ public sealed class AircraftRepository(
                 notes = $notes,
                 version = version + 1,
                 updated_at_utc = $updated_at_utc
-            WHERE id = $id AND version = $expected_version;
+            WHERE id = $id
+              AND version = $expected_version
+              AND (
+                  $status = 'ACTIVE'
+                  OR NOT EXISTS (
+                      SELECT 1
+                      FROM active_flights
+                      WHERE active_flights.aircraft_id = aircraft.id
+                  )
+              );
             """;
         command.Parameters.AddWithValue("$tail_number", tailNumber);
         command.Parameters.AddWithValue("$display_name", displayName);
@@ -192,7 +201,16 @@ public sealed class AircraftRepository(
     {
         await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = "DELETE FROM aircraft WHERE id = $id;";
+        command.CommandText =
+            """
+            DELETE FROM aircraft
+            WHERE id = $id
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM active_flights
+                  WHERE active_flights.aircraft_id = aircraft.id
+              );
+            """;
         command.Parameters.AddWithValue("$id", aircraftId);
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }

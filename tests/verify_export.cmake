@@ -5,8 +5,7 @@ endif()
 file(REMOVE_RECURSE "${EXPORT_DIR}")
 execute_process(
   COMMAND "${AEROGUARD_APP}" --export-all "${EXPORT_DIR}"
-          --scenarios-dir "${SOURCE_DIR}/scenarios" --duration 1000
-          --tick 100 --seed 42
+          --scenarios-dir "${SOURCE_DIR}/scenarios" --tick 100 --seed 42
   RESULT_VARIABLE result
   OUTPUT_VARIABLE output
   ERROR_VARIABLE error
@@ -40,3 +39,9 @@ string(JSON scenario_count LENGTH "${manifest}" scenarios)
 if(NOT schema_version EQUAL 1 OR NOT scenario_count EQUAL 7)
   message(FATAL_ERROR "unexpected manifest contract")
 endif()
+foreach(index RANGE 0 6)
+  string(JSON duration_ms GET "${manifest}" scenarios ${index} duration_ms)
+  if(duration_ms LESS 40000 OR duration_ms GREATER 55000)
+    message(FATAL_ERROR "scenario ${index} duration is outside 40-55 seconds")
+  endif()
+endforeach()

@@ -393,6 +393,32 @@ public sealed class IdentityRepository(
         return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
+    public async Task<bool> IsSessionActiveAsync(
+        long sessionId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM sessions
+                JOIN users ON users.id = sessions.user_id
+                WHERE sessions.id = $session_id
+                  AND sessions.revoked_at_utc IS NULL
+                  AND sessions.expires_at_utc > $now
+                  AND users.is_active = 1
+            );
+            """;
+        command.Parameters.AddWithValue("$session_id", sessionId);
+        command.Parameters.AddWithValue("$now", Format(now));
+        return Convert.ToInt64(
+            await command.ExecuteScalarAsync(cancellationToken),
+            CultureInfo.InvariantCulture) == 1;
+    }
+
     private static async Task<UserAccount?> ReadOneUserAsync(
         SqliteConnection connection,
         SqliteCommand command,

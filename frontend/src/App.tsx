@@ -483,7 +483,7 @@ export default function App() {
 
                 <Statistics dataset={dataset} />
                 <ArchitectureOverview />
-                <OperationsWorkspace />
+                <OperationsWorkspace runs={archiveLoad.status === 'ready' ? archiveLoad.value : []} />
                 <footer><span>AeroGuard</span><p>Avionics Health Monitoring Simulator - C++20 + ASP.NET Core + React</p><p>Portfolio engineering project</p></footer>
               </>
             )}

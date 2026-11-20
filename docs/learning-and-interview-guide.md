@@ -5,11 +5,12 @@
 > AeroGuard is an independent C++20 simulator for health monitoring across six
 > fictional aircraft subsystems. A seeded, virtual-time engine creates typed
 > telemetry, validates it, tracks heartbeats, and applies an explicit five-state
-> health policy. It writes versioned JSON Lines that a React dashboard replays;
-> the UI never recomputes the core decision. I used a fixed-capacity queue, an
-> injected clock and simulated HAL, exhaustive transition tests, cross-platform
-> CMake presets, CI, and sanitizers. The project makes no hard real-time or
-> aviation-certification claim.
+> health policy. It writes versioned JSON Lines that a .NET API archives in
+> SQLite. React replays those records and shows assigned simulated flights on a
+> world map; neither layer recomputes the core decision. I used a fixed-capacity
+> queue, an injected clock and simulated HAL, exhaustive transition tests,
+> cross-platform CMake presets, CI, and sanitizers. The project makes no hard
+> real-time or aviation-certification claim.
 
 ## Architecture story to draw on a whiteboard
 
@@ -21,12 +22,15 @@ flowchart LR
     Queue --> Validate[Validation + heartbeat]
     Validate --> FSM[Health state machine]
     FSM --> Log[Versioned JSONL]
-    Log --> UI[React replay UI]
+    Log --> API[.NET archive + SQLite]
+    API -->|REST replay| UI[React dashboard]
+    API -->|authorized SignalR updates| Map[Simulated world map]
 ```
 
-C++ owns simulation and health decisions. React owns presentation and automatic
-replay timing. The JSONL boundary exposes the records that cross between them,
-so tests check that separation directly.
+C++ owns simulation and health decisions. .NET validates, stores, authorizes,
+and distributes records. React owns presentation and replay timing. The JSONL
+boundary exposes the records that cross from C++, so tests check that
+separation directly.
 
 ## Modern C++ concepts demonstrated
 
@@ -77,8 +81,9 @@ deadline. Logical determinism and hard real-time timing are separate claims.
 | 6. Dashboard | Strict parser, automatic replay state, responsive components | Run Vitest, then inspect normal/fault replays at desktop and mobile widths. |
 | 7. Contract integration | C++ export-all manifest and frontend data loading | Regenerate `frontend/public/data`; load every scenario from the selector. |
 | 8. Delivery | Windows/Linux CI, analysis, artifacts, Docker | Inspect a real CI run; rebuild Docker without a host toolchain. |
-| 9. Documentation | Requirements, decisions, limitations, traceability | Pick three `REQ` IDs and follow each to code and a passing test. |
-| 10. Clean verification | Fresh build and demo | Clone to a clean path and follow only the README. |
+| 9. Operations API | Assignment rules, account overrides, active flights, chat, SignalR sessions | Exercise Admin, owner, Viewer, unassigned, and revoked-session cases. |
+| 10. Documentation | Requirements, decisions, limitations, traceability | Pick three `REQ` IDs and follow each to code and a passing test. |
+| 11. Clean verification | Fresh build and demo | Clone to a clean path and follow only the README. |
 
 ## Interview questions to rehearse
 

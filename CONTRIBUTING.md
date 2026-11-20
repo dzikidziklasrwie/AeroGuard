@@ -9,7 +9,8 @@ AeroGuard accepts fictional subsystem models, synthetic telemetry, diagnostic
 features, tests, and documentation. Do not contribute confidential or
 proprietary material, real platform data, weapon or countermeasure behaviour,
 tactical threat processing, or code intended to control physical equipment.
-The project makes no real-time, safety, or aviation-certification claim.
+The project makes no hard real-time, safety, or aviation-certification claim
+and accepts no real-aircraft feed.
 
 ## Local quality gate
 
@@ -52,11 +53,23 @@ details.
 - Link each behavioural requirement to an automated test in
   `docs/traceability.md`.
 - Keep seeded runs reproducible; tests must not depend on wall-clock time.
+- Keep all seven packaged default scenarios between 40 and 55 seconds and
+  regenerate the manifest and JSONL files after a schedule change.
 - Prefer bounded containers and explicit ownership in the processing path.
 - Treat JSONL as a versioned interface and update the dashboard contract tests
   when its schema changes.
 - Preserve final-administrator, final-owner, session-revocation, and optimistic
   version invariants when changing account or fleet code.
+- Preserve assignment visibility, per-account operation permissions,
+  session-aware SignalR delivery, reconnect resync, and the canonical `WORLD`
+  code when changing map or chat code.
+- Preserve ISO country validation, the mapped-aircraft `ACTIVE` invariant,
+  atomic chat authorization, event ordering, and the latest-500-message cap
+  when changing operations storage or validation.
+- Keep the Compose API host port loopback-only. Trust forwarded headers only
+  behind the configured nginx proxy.
+- Treat browser, nginx WebSocket, and Docker stack verification as a separate
+  check from unit, component, and in-process API tests.
 - Never commit passwords, bearer tokens, local databases, `.env`, or generated
   CV files.
 - Never report a test, coverage, sanitizer, or CI result unless you observed it.

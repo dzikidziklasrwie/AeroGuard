@@ -85,3 +85,89 @@ export interface AircraftInput {
   status: AircraftStatus;
   notes: string;
 }
+
+export const FLIGHT_SCOPE_TYPES = ['WORLD', 'CONTINENT', 'COUNTRY'] as const;
+export type FlightScopeType = (typeof FLIGHT_SCOPE_TYPES)[number];
+
+export const FLIGHT_CONDITIONS = ['HEALTHY', 'DEGRADED', 'CRITICAL', 'UNKNOWN'] as const;
+export type FlightCondition = (typeof FLIGHT_CONDITIONS)[number];
+
+export const OPERATION_PERMISSIONS = [
+  'FLIGHT_PLACE_OWN',
+  'FLIGHT_REMOVE_OWN',
+  'FLIGHT_RECONFIGURE_OWN',
+  'CHAT_SEND',
+  'TELEMETRY_SHARE',
+] as const;
+export type OperationPermission = (typeof OPERATION_PERMISSIONS)[number];
+
+export const OPERATION_PERMISSION_LABELS: Record<OperationPermission, string> = {
+  FLIGHT_PLACE_OWN: 'Place owned aircraft',
+  FLIGHT_REMOVE_OWN: 'Remove owned aircraft',
+  FLIGHT_RECONFIGURE_OWN: 'Move owned aircraft',
+  CHAT_SEND: 'Send flight messages',
+  TELEMETRY_SHARE: 'Share telemetry',
+};
+
+export const CHAT_SHARE_TYPES = ['TEXT', 'LOCATION', 'TELEMETRY'] as const;
+export type ChatShareType = (typeof CHAT_SHARE_TYPES)[number];
+
+export interface FlightTelemetry {
+  subsystem: string;
+  health: string;
+  valid: boolean;
+  reason: string | null;
+  data: Record<string, unknown>;
+}
+
+export interface FlightRecord {
+  id: number;
+  aircraft_id: number;
+  tail_number: string;
+  display_name: string;
+  owner_user_id: number;
+  owner_username: string;
+  owner_display_name: string;
+  current_user_access: AircraftAccessLevel | null;
+  scope_type: FlightScopeType;
+  scope_code: string;
+  latitude: number;
+  longitude: number;
+  heading_deg: number;
+  speed_kph: number;
+  run_id: number;
+  scenario: string | null;
+  scenario_label: string | null;
+  scenario_elapsed_ms: number;
+  scenario_duration_ms: number;
+  condition: FlightCondition;
+  telemetry: FlightTelemetry[];
+  version: number;
+  started_at_utc: string;
+  updated_at_utc: string;
+  can_manage: boolean;
+  can_remove: boolean;
+  event_sequence?: number;
+}
+
+export interface FlightInput {
+  aircraft_id: number;
+  run_id: number;
+  scope_type: FlightScopeType;
+  scope_code: string;
+  latitude: number;
+  longitude: number;
+  speed_kph: number;
+}
+
+export interface ChatMessageRecord {
+  id: number;
+  flight_id: number;
+  sender_user_id: number;
+  sender_username: string;
+  sender_display_name: string;
+  message: string;
+  share_type: ChatShareType;
+  payload: unknown;
+  sent_at_utc: string;
+}
