@@ -21,6 +21,14 @@ public sealed class BearerTokenAuthenticationHandler(
     protected override async Task<AuthenticateResult> HandleAuthenticateAsync()
     {
         var authorization = Request.Headers.Authorization.ToString();
+        if (string.IsNullOrWhiteSpace(authorization)
+            && Request.Path.StartsWithSegments("/hubs/operations")
+            && Request.Query.TryGetValue("access_token", out var queryTokens)
+            && queryTokens.Count == 1)
+        {
+            authorization = $"Bearer {queryTokens[0]}";
+        }
+
         if (string.IsNullOrWhiteSpace(authorization))
         {
             return AuthenticateResult.NoResult();

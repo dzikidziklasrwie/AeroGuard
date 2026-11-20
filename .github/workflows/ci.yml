@@ -207,17 +207,37 @@ jobs:
         shell: bash
         run: |
           docker compose up --detach api dashboard
-          for attempt in {1..40}; do
+          ready=false
+          for _ in {1..40}; do
             if curl --fail --silent http://127.0.0.1:8080/ >/dev/null \
               && curl --fail --silent http://127.0.0.1:8080/api/health >/dev/null \
               && curl --fail --silent http://127.0.0.1:8081/api/health >/dev/null; then
-              exit 0
+              ready=true
+              break
             fi
             sleep 2
           done
-          docker compose ps
-          docker compose logs api dashboard
-          exit 1
+          if [[ "$ready" != "true" ]]; then
+            docker compose ps
+            docker compose logs api dashboard
+            exit 1
+          fi
+
+          login_response="$(curl --fail --silent \
+            --request POST \
+            --header 'Content-Type: application/json' \
+            --data '{"username":"admin","password":"Ci-Only-Admin-Password-42!"}' \
+            http://127.0.0.1:8080/api/auth/login)"
+          access_token="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])' \
+            <<<"$login_response")"
+          test -n "$access_token"
+          curl --fail --silent \
+            --header "Authorization: Bearer $access_token" \
+            http://127.0.0.1:8080/api/operations/flights >/dev/null
+          curl --fail --silent \
+            --request POST \
+            --header "Authorization: Bearer $access_token" \
+            'http://127.0.0.1:8080/hubs/operations/negotiate?negotiateVersion=1' >/dev/null
 
       - name: Stop smoke-test stack
         if: always()

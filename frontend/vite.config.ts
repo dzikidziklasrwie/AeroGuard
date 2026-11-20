@@ -9,6 +9,11 @@ export default defineConfig({
         target: process.env.AEROGUARD_API_TARGET ?? 'http://localhost:5000',
         changeOrigin: true,
       },
+      '/hubs': {
+        target: process.env.AEROGUARD_API_TARGET ?? 'http://localhost:5000',
+        changeOrigin: true,
+        ws: true,
+      },
     },
   },
   test: {

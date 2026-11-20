@@ -2,6 +2,7 @@ using System.Globalization;
 using AeroGuard.Api.Contracts;
 using AeroGuard.Api.Errors;
 using AeroGuard.Api.Identity;
+using AeroGuard.Api.Operations;
 using Microsoft.Data.Sqlite;
 
 namespace AeroGuard.Api.Fleet;
@@ -10,7 +11,10 @@ public sealed class AircraftService(
     IAircraftRepository aircraftRepository,
     IIdentityRepository identityRepository,
     IAuditRepository auditRepository,
-    TimeProvider timeProvider)
+    IOperationsRepository operationsRepository,
+    OperationsBroadcaster operationsBroadcaster,
+    TimeProvider timeProvider,
+    ILogger<AircraftService> logger)
 {
     public async Task<IReadOnlyList<AircraftDto>> GetVisibleAsync(
         CurrentUser actor,
@@ -80,7 +84,7 @@ public sealed class AircraftService(
             aircraft.Id.ToString(CultureInfo.InvariantCulture),
             new { aircraft.TailNumber, aircraft.DisplayName, aircraft.Model, aircraft.Status },
             now,
-            cancellationToken);
+            CancellationToken.None);
         return aircraft.ToDto();
     }
 
@@ -111,6 +115,15 @@ public sealed class AircraftService(
             request.Model,
             request.Status,
             request.Notes);
+        if (values.Status != "ACTIVE"
+            && await operationsRepository.GetFlightByAircraftAsync(
+                aircraftId,
+                cancellationToken) is not null)
+        {
+            throw ApiProblemException.Conflict(
+                "Remove the aircraft from the operations map before changing its status.");
+        }
+
         var now = timeProvider.GetUtcNow();
         AircraftRecord? updated;
         try
@@ -134,9 +147,23 @@ public sealed class AircraftService(
 
         if (updated is null)
         {
-            if (await aircraftRepository.GetAsync(aircraftId, actor.Id, cancellationToken) is null)
+            var latest = await aircraftRepository.GetAsync(
+                aircraftId,
+                actor.Id,
+                cancellationToken);
+            if (latest is null)
             {
                 throw ApiProblemException.NotFound("The aircraft does not exist.");
+            }
+
+            if (values.Status != "ACTIVE"
+                && latest.Version == request.ExpectedVersion
+                && await operationsRepository.GetFlightByAircraftAsync(
+                    aircraftId,
+                    cancellationToken) is not null)
+            {
+                throw ApiProblemException.Conflict(
+                    "Remove the aircraft from the operations map before changing its status.");
             }
 
             throw ApiProblemException.Conflict("The aircraft changed after it was loaded. Refresh it and submit the update again.");
@@ -153,7 +180,7 @@ public sealed class AircraftService(
                 after = new { updated.TailNumber, updated.DisplayName, updated.Model, updated.Status, updated.Version },
             },
             now,
-            cancellationToken);
+            CancellationToken.None);
         return updated.ToDto();
     }
 
@@ -166,8 +193,24 @@ public sealed class AircraftService(
         RequireAnyRole(actor, BuiltInRoles.Admin);
         var aircraft = await aircraftRepository.GetAsync(aircraftId, actor.Id, cancellationToken)
             ?? throw ApiProblemException.NotFound("The aircraft does not exist.");
+        if (await operationsRepository.GetFlightByAircraftAsync(
+                aircraftId,
+                cancellationToken) is not null)
+        {
+            throw ApiProblemException.Conflict(
+                "Remove the aircraft from the operations map before deleting it.");
+        }
+
         if (!await aircraftRepository.DeleteAsync(aircraftId, cancellationToken))
         {
+            if (await operationsRepository.GetFlightByAircraftAsync(
+                    aircraftId,
+                    cancellationToken) is not null)
+            {
+                throw ApiProblemException.Conflict(
+                    "Remove the aircraft from the operations map before deleting it.");
+            }
+
             throw ApiProblemException.NotFound("The aircraft does not exist.");
         }
 
@@ -178,7 +221,7 @@ public sealed class AircraftService(
             aircraftId.ToString(CultureInfo.InvariantCulture),
             new { aircraft.TailNumber, aircraft.DisplayName },
             timeProvider.GetUtcNow(),
-            cancellationToken);
+            CancellationToken.None);
     }
 
     public async Task<IReadOnlyList<AircraftAssignmentDto>> GetAssignmentsAsync(
@@ -252,7 +295,18 @@ public sealed class AircraftService(
             aircraftId.ToString(CultureInfo.InvariantCulture),
             new { user.Id, user.Username, before = current?.AccessLevel, after = assignment.AccessLevel },
             now,
-            cancellationToken);
+            CancellationToken.None);
+        var activeFlight = await operationsRepository.GetFlightByAircraftAsync(
+            aircraftId,
+            CancellationToken.None);
+        if (activeFlight is not null)
+        {
+            await TryBroadcastAsync(
+                token => operationsBroadcaster.BroadcastFlightAsync(activeFlight, token),
+                "assignment update",
+                activeFlight.Id);
+        }
+
         return assignment.ToDto();
     }
 
@@ -265,6 +319,9 @@ public sealed class AircraftService(
         ArgumentNullException.ThrowIfNull(actor);
         RequireAnyRole(actor, BuiltInRoles.Admin);
         await RequireAircraftAsync(aircraftId, actor.Id, cancellationToken);
+        var activeFlight = await operationsRepository.GetFlightByAircraftAsync(
+            aircraftId,
+            cancellationToken);
         var current = (await aircraftRepository.GetAssignmentsAsync(aircraftId, cancellationToken))
             .SingleOrDefault(assignment => assignment.UserId == userId)
             ?? throw ApiProblemException.NotFound("The aircraft assignment does not exist.");
@@ -299,7 +356,36 @@ public sealed class AircraftService(
             aircraftId.ToString(CultureInfo.InvariantCulture),
             new { current.UserId, current.Username, current.AccessLevel },
             timeProvider.GetUtcNow(),
-            cancellationToken);
+            CancellationToken.None);
+        if (activeFlight is not null)
+        {
+            await TryBroadcastAsync(
+                token => operationsBroadcaster.BroadcastVisibilityRemovedAsync(
+                    activeFlight.Id,
+                    userId,
+                    token),
+                "assignment removal",
+                activeFlight.Id);
+        }
+    }
+
+    private async Task TryBroadcastAsync(
+        Func<CancellationToken, Task> broadcast,
+        string eventName,
+        long flightId)
+    {
+        try
+        {
+            await broadcast(CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Flight {FlightId} {EventName} was stored, but its immediate live update failed",
+                flightId,
+                eventName);
+        }
     }
 
     private async Task<AircraftRecord> RequireAircraftAsync(

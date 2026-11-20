@@ -168,3 +168,51 @@ client receives HTTP 409 and must reload before retrying.
 
 Trade-off. Clients must retain the returned version and handle conflicts. The
 rule protects one record; it does not provide a multi-record workflow lock.
+
+## DD-014 - Stored telemetry with separate map motion
+
+Decision. Active flights reference an archived C++ run. The API advances that
+run at wall-clock speed and loops it at its recorded duration. A separate
+calculation moves the marker around a synthetic route at an accelerated display
+rate.
+
+Reason. A 40 to 55 second scenario remains readable while the marker moves far
+enough to see on a world map. C++ remains the source for telemetry validation,
+subsystem health, and state transitions.
+
+Trade-off. The marker is a presentation simulation. It does not represent a
+recorded or observed aircraft track, and the one-second update cadence is not a
+deadline guarantee.
+
+## DD-015 - REST snapshot before SignalR updates
+
+Decision. The browser loads an authorized REST snapshot, then accepts
+`flight_updated`, `flight_removed`, and `message_posted` events from an
+authenticated SignalR connection. Per-flight sequences reject older delayed
+events. The browser reloads the snapshot after reconnecting.
+
+Reason. REST gives the browser a complete starting state. SignalR carries small
+changes while connected, the reconnect read repairs an event gap, and a
+five-second REST poll keeps the map usable when the hub cannot connect.
+
+Trade-off. The server keeps a process-local connection registry, checks the
+backing session before each delivery, and builds a snapshot per recipient. A
+failure for one flight doesn't stop the rest of that broadcast cycle. Multiple
+API replicas or a high-volume fleet need shared connection coordination, a
+SignalR backplane, and a different fan-out design.
+
+## DD-016 - Assignment plus account operation permissions
+
+Decision. Aircraft assignment controls visibility and ownership. Five
+per-account permissions control placement, reconfiguration, removal, chat, and
+telemetry sharing. `Admin` bypasses the five checks. `Operator` and `Viewer`
+provide defaults only while the account has no override rows.
+
+Reason. An administrator can restrict one operator without changing ownership
+or creating a new role. Read access stays tied to the aircraft assignment.
+Chat insertion repeats the current permission and assignment predicates in its
+SQL statement, avoiding a check-then-write revocation race.
+
+Trade-off. Saving an override replaces the complete set, including an
+explicitly empty set. The UI and API must show effective permissions so an
+administrator can distinguish role defaults from saved account policy.

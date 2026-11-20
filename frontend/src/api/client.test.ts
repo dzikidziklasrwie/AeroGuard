@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { getAircraft, login } from './client';
+import {
+  createOperationFlight,
+  getAircraft,
+  getOperationPermissions,
+  login,
+  replaceUserOperationPermissions,
+} from './client';
 
 function response(body: unknown, status = 200) {
   return {
@@ -54,6 +60,51 @@ describe('API client', () => {
     await expect(login('admin', 'wrong-password')).rejects.toEqual(expect.objectContaining({
       status: 401,
       message: 'The username or password is incorrect.',
+    }));
+  });
+
+  it('normalizes wrapped operation permissions from the API', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response({ permissions: ['FLIGHT_PLACE_OWN', 'CHAT_SEND'] }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(getOperationPermissions('session-token')).resolves.toEqual(['FLIGHT_PLACE_OWN', 'CHAT_SEND']);
+    const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(new Headers(options.headers).get('Authorization')).toBe('Bearer session-token');
+  });
+
+  it('sends canonical world placement and admin permission payloads', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response({ id: 44 }))
+      .mockResolvedValueOnce(response({ permissions: ['TELEMETRY_SHARE'] }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await createOperationFlight('session-token', {
+      aircraft_id: 9,
+      run_id: 11,
+      scope_type: 'WORLD',
+      scope_code: 'WORLD',
+      latitude: 52.23,
+      longitude: 21.01,
+      speed_kph: 720,
+    });
+    await expect(replaceUserOperationPermissions('session-token', 2, ['TELEMETRY_SHARE']))
+      .resolves.toEqual(['TELEMETRY_SHARE']);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/operations/flights', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({
+        aircraft_id: 9,
+        run_id: 11,
+        scope_type: 'WORLD',
+        scope_code: 'WORLD',
+        latitude: 52.23,
+        longitude: 21.01,
+        speed_kph: 720,
+      }),
+    }));
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/admin/users/2/permissions', expect.objectContaining({
+      method: 'PUT',
+      body: JSON.stringify({ permissions: ['TELEMETRY_SHARE'] }),
     }));
   });
 });

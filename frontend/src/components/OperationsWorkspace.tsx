@@ -10,10 +10,12 @@ import {
   getAudit,
   getCurrentUser,
   getRoles,
+  getUserOperationPermissions,
   getUsers,
   login,
   logout,
   removeAircraftAssignment,
+  replaceUserOperationPermissions,
   replaceUserRoles,
   resetUserPassword,
   setAircraftAssignment,
@@ -29,12 +31,17 @@ import {
   type AircraftInput,
   type AircraftRecord,
   type AuditRecord,
+  OPERATION_PERMISSION_LABELS,
+  OPERATION_PERMISSIONS,
+  type OperationPermission,
   type RoleRecord,
   type UserAccount,
 } from '../api/types';
 import { titleCase } from '../utils/format';
+import type { RunArchiveEntry } from '../types';
+import { OperationsMap } from './OperationsMap';
 
-type WorkspaceView = 'fleet' | 'accounts' | 'audit';
+type WorkspaceView = 'map' | 'fleet' | 'accounts' | 'audit';
 
 function hasRole(user: UserAccount, role: string): boolean {
   return user.roles.some((candidate) => candidate.toLowerCase() === role.toLowerCase());
@@ -298,20 +305,25 @@ interface UserCardProps {
   roles: RoleRecord[];
   currentUserId: number;
   busy: boolean;
+  operationPermissions: OperationPermission[];
   onRoles: (user: UserAccount, roles: string[]) => Promise<void>;
+  onPermissions: (user: UserAccount, permissions: OperationPermission[]) => Promise<void>;
   onStatus: (user: UserAccount) => Promise<void>;
   onPassword: (user: UserAccount, password: string) => Promise<void>;
 }
 
-function UserCard({ user, roles, currentUserId, busy, onRoles, onStatus, onPassword }: UserCardProps) {
+function UserCard({ user, roles, currentUserId, busy, operationPermissions, onRoles, onPermissions, onStatus, onPassword }: UserCardProps) {
   const [selectedRoles, setSelectedRoles] = useState(user.roles);
+  const [selectedPermissions, setSelectedPermissions] = useState(operationPermissions);
   const [password, setPassword] = useState('');
 
   return (
     <article className={`user-card${user.is_active ? '' : ' inactive'}`}>
       <div className="user-card-heading"><span className="user-avatar">{user.display_name.slice(0, 2).toUpperCase()}</span><div><h4>{user.display_name}</h4><p>@{user.username}{user.id === currentUserId ? ' - current session' : ''}</p></div><span className={`account-state ${user.is_active ? 'active' : ''}`}>{user.is_active ? 'Active' : 'Inactive'}</span></div>
       <fieldset className="role-checks"><legend>Assigned roles</legend>{roles.map((role) => <label key={role.id}><input type="checkbox" checked={selectedRoles.includes(role.name)} onChange={(event) => setSelectedRoles((current) => event.target.checked ? [...current, role.name] : current.filter((name) => name !== role.name))} /><span>{role.name}</span></label>)}</fieldset>
-      <div className="user-actions"><button className="button secondary-button" type="button" disabled={busy || selectedRoles.length === 0} onClick={() => onRoles(user, selectedRoles)}>Save roles</button><button className="text-button" type="button" disabled={busy || user.id === currentUserId} onClick={() => onStatus(user)}>{user.is_active ? 'Deactivate' : 'Activate'}</button></div>
+      <fieldset className="role-checks permission-checks"><legend>Operations permissions</legend>{OPERATION_PERMISSIONS.map((permission) => <label key={permission}><input type="checkbox" checked={selectedPermissions.includes(permission)} onChange={(event) => setSelectedPermissions((current) => event.target.checked ? [...current, permission] : current.filter((name) => name !== permission))} /><span>{OPERATION_PERMISSION_LABELS[permission]}</span></label>)}</fieldset>
+      {user.roles.some((role) => role.toLowerCase() === 'admin') && <p className="permission-note">The Admin role grants every operations permission.</p>}
+      <div className="user-actions"><button className="button secondary-button" type="button" disabled={busy || selectedRoles.length === 0} onClick={() => onRoles(user, selectedRoles)}>Save roles</button><button className="button secondary-button" type="button" disabled={busy} onClick={() => onPermissions(user, selectedPermissions)}>Save map access</button><button className="text-button" type="button" disabled={busy || user.id === currentUserId} onClick={() => onStatus(user)}>{user.is_active ? 'Deactivate' : 'Activate'}</button></div>
       <form className="password-reset" onSubmit={async (event) => { event.preventDefault(); await onPassword(user, password); setPassword(''); }}><label><span>New password</span><input type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={12} placeholder="12 or more characters" required /></label><button className="text-button" type="submit" disabled={busy}>Reset password</button></form>
     </article>
   );
@@ -334,6 +346,30 @@ function AccountsPanel({ token, currentUser, users, roles, busy, runAction, refr
   const [newUserRoles, setNewUserRoles] = useState<string[]>(['Viewer']);
   const [roleName, setRoleName] = useState('');
   const [roleDescription, setRoleDescription] = useState('');
+  const [operationPermissions, setOperationPermissions] = useState<Record<number, OperationPermission[]>>({});
+  const [permissionLoadFailed, setPermissionLoadFailed] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let active = true;
+    let failed = false;
+    Promise.all(users.map(async (user) => {
+      try {
+        return [user.id, await getUserOperationPermissions(token, user.id, controller.signal)] as const;
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) failed = true;
+        return [user.id, [] as OperationPermission[]] as const;
+      }
+    })).then((records) => {
+      if (!active) return;
+      setPermissionLoadFailed(failed);
+      setOperationPermissions(Object.fromEntries(records));
+    });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [token, users]);
 
   async function mutate(message: string, action: () => Promise<unknown>) {
     if (await runAction(message, action)) await refreshAccounts();
@@ -356,13 +392,19 @@ function AccountsPanel({ token, currentUser, users, roles, busy, runAction, refr
           <fieldset className="role-checks"><legend>Initial roles</legend>{roles.map((role) => <label key={role.id}><input type="checkbox" checked={newUserRoles.includes(role.name)} onChange={(event) => setNewUserRoles((current) => event.target.checked ? [...current, role.name] : current.filter((name) => name !== role.name))} /><span>{role.name}</span></label>)}</fieldset>
           <button className="button primary-button" type="submit" disabled={busy || newUserRoles.length === 0}>Create account</button>
         </form>
+        {permissionLoadFailed && <p className="workspace-message error" role="status">Some map permissions couldn't be loaded.</p>}
         <div className="user-grid">{users.map((user) => <UserCard
-          key={`${user.id}-${user.updated_at_utc}`}
+          key={`${user.id}-${user.updated_at_utc}-${(operationPermissions[user.id] ?? []).join('.')}`}
           user={user}
           roles={roles}
           currentUserId={currentUser.id}
           busy={busy}
+          operationPermissions={operationPermissions[user.id] ?? []}
           onRoles={async (target, selectedRoles) => mutate('User roles saved.', () => replaceUserRoles(token, target.id, selectedRoles))}
+          onPermissions={async (target, selectedPermissions) => {
+            const saved = await runAction('Map permissions saved.', () => replaceUserOperationPermissions(token, target.id, selectedPermissions));
+            if (saved) setOperationPermissions((current) => ({ ...current, [target.id]: selectedPermissions }));
+          }}
           onStatus={async (target) => mutate(`Account ${target.is_active ? 'deactivated' : 'activated'}.`, () => setUserStatus(token, target.id, !target.is_active))}
           onPassword={async (target, value) => mutate('Password reset and existing sessions revoked.', () => resetUserPassword(token, target.id, value))}
         />)}</div>
@@ -390,13 +432,13 @@ function AuditPanel({ records }: { records: AuditRecord[] }) {
   );
 }
 
-function AuthenticatedWorkspace({ session, onSignedOut }: { session: AccessSession; onSignedOut: () => void }) {
+function AuthenticatedWorkspace({ session, runs, onSignedOut }: { session: AccessSession; runs: RunArchiveEntry[]; onSignedOut: () => void }) {
   const [currentUser, setCurrentUser] = useState(session.user);
   const [aircraft, setAircraft] = useState<AircraftRecord[]>([]);
   const [users, setUsers] = useState<UserAccount[]>([]);
   const [roles, setRoles] = useState<RoleRecord[]>([]);
   const [audit, setAudit] = useState<AuditRecord[]>([]);
-  const [view, setView] = useState<WorkspaceView>('fleet');
+  const [view, setView] = useState<WorkspaceView>('map');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -472,6 +514,7 @@ function AuthenticatedWorkspace({ session, onSignedOut }: { session: AccessSessi
         <div><span className="session-expiry">Session ends {new Date(session.expiresAtUtc).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</span><button className="button secondary-button" type="button" onClick={async () => { try { await logout(session.token); } finally { onSignedOut(); } }}>Sign out</button></div>
       </header>
       <nav className="workspace-tabs" aria-label="Operations workspace views">
+        <button type="button" className={view === 'map' ? 'active' : ''} aria-pressed={view === 'map'} onClick={() => setView('map')}>Operations map</button>
         <button type="button" className={view === 'fleet' ? 'active' : ''} aria-pressed={view === 'fleet'} onClick={() => setView('fleet')}>Fleet</button>
         {isAdmin && <button type="button" className={view === 'accounts' ? 'active' : ''} aria-pressed={view === 'accounts'} onClick={() => setView('accounts')}>People and roles</button>}
         {isAdmin && <button type="button" className={view === 'audit' ? 'active' : ''} aria-pressed={view === 'audit'} onClick={async () => { setView('audit'); try { await refreshAudit(); } catch (requestError) { handleRequestError(requestError); } }}>Audit log</button>}
@@ -480,6 +523,7 @@ function AuthenticatedWorkspace({ session, onSignedOut }: { session: AccessSessi
       {notice && <p className="workspace-message success" role="status">{notice}</p>}
       {loading ? <div className="workspace-loading" role="status"><span className="loader" />Loading account and fleet records...</div> : (
         <>
+          {view === 'map' && <OperationsMap token={session.token} currentUser={currentUser} aircraft={aircraft} runs={runs} onUnauthorized={onSignedOut} />}
           {view === 'fleet' && <FleetPanel token={session.token} currentUser={currentUser} aircraft={aircraft} users={users} busy={busy} runAction={runAction} refreshFleet={async () => { try { await refreshFleet(); } catch (requestError) { handleRequestError(requestError); } }} />}
           {view === 'accounts' && isAdmin && <AccountsPanel token={session.token} currentUser={currentUser} users={users} roles={roles} busy={busy} runAction={runAction} refreshAccounts={async () => { try { await refreshAccounts(); } catch (requestError) { handleRequestError(requestError); } }} />}
           {view === 'audit' && isAdmin && <AuditPanel records={audit} />}
@@ -489,7 +533,7 @@ function AuthenticatedWorkspace({ session, onSignedOut }: { session: AccessSessi
   );
 }
 
-export function OperationsWorkspace() {
+export function OperationsWorkspace({ runs = [] }: { runs?: RunArchiveEntry[] }) {
   const [session, setSession] = useState<AccessSession | null>(null);
   const signedOut = useCallback(() => setSession(null), []);
   const status = useMemo(() => session ? `Signed in as ${session.user.username}` : 'Sign-in required', [session]);
@@ -500,7 +544,7 @@ export function OperationsWorkspace() {
         <div><p className="section-kicker">Identity and fleet API</p><h2 id="workspace-title">Operations workspace</h2></div>
         <p>{status}. Public telemetry replay remains available without an account.</p>
       </div>
-      {session ? <AuthenticatedWorkspace session={session} onSignedOut={signedOut} /> : <LoginPanel onAuthenticated={setSession} />}
+      {session ? <AuthenticatedWorkspace session={session} runs={runs} onSignedOut={signedOut} /> : <LoginPanel onAuthenticated={setSession} />}
     </section>
   );
 }

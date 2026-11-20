@@ -12,6 +12,8 @@ describe('C++ simulator artifacts', () => {
 
     expect(manifest.generated_by).toBe('AeroGuard');
     expect(manifest.scenarios).toHaveLength(7);
+    expect(manifest.scenarios.every((scenario) => scenario.duration_ms >= 40_000)).toBe(true);
+    expect(manifest.scenarios.every((scenario) => scenario.duration_ms <= 55_000)).toBe(true);
 
     for (const scenario of manifest.scenarios) {
       const dataset = parseJsonl(readFileSync(join(dataDirectory, scenario.file), 'utf8'), scenario.file);

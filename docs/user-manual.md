@@ -9,8 +9,8 @@ in SQLite. The React dashboard replays the records and provides an
 authenticated workspace for accounts and aircraft.
 
 This manual covers installation, replay selection, dashboard interpretation,
-accounts, roles, aircraft assignments, the native simulator, report export,
-and common problems.
+simulated world-map flights, flight chat, accounts, roles, aircraft
+assignments, the native simulator, report export, and common problems.
 
 > AeroGuard is independent educational software. It isn't certified,
 > connected to aircraft equipment, or intended for operational use.
@@ -38,8 +38,10 @@ Copy-Item .env.example .env
 ```
 
 Open `.env` and replace the example password. The file is ignored by Git. The
-default username is `admin`; the plain password is supplied to the first API
-start and is not written to source control.
+default username is `admin`; the plain password is supplied at API startup and
+is not written to source control. Compose synchronizes that password with the
+configured administrator and revokes older sessions. After a later `.env`
+change, recreate the API container before signing in with the new value.
 
 ### Build and start
 
@@ -58,8 +60,14 @@ The first build downloads base images and dependencies. It then:
 Wait for both services to become healthy, then open:
 
 - Dashboard: [http://localhost:8080](http://localhost:8080)
-- Direct API health: [http://localhost:8081/api/health](http://localhost:8081/api/health)
-- OpenAPI: [http://localhost:8081/openapi/v1.json](http://localhost:8081/openapi/v1.json)
+- Direct API health: [http://127.0.0.1:8081/api/health](http://127.0.0.1:8081/api/health)
+- OpenAPI: [http://127.0.0.1:8081/openapi/v1.json](http://127.0.0.1:8081/openapi/v1.json)
+
+Compose binds ports 8080 and 8081 to `127.0.0.1`, so dashboard and direct API
+access stay on the host. The local profile permits an explicitly selected
+short Development password, including `admin`, while direct Production starts
+keep the strong-password rule. nginx supplies one trusted hop of forwarded
+client information to the API.
 
 Stop the foreground process with `Ctrl+C`, then remove its containers and
 network:
@@ -85,7 +93,7 @@ accounts, aircraft, assignments, sessions, audit records, and imported runs.
 | `Recorded timeline` | List visible state transitions and diagnostic events. |
 | `Simulation statistics` | Show values from the final C++ summary record. |
 | `Recorded runs` | Select a specific archived or bundled replay. |
-| `Operations workspace` | Sign in to manage fleet and, for administrators, accounts, roles, assignments, and audit. |
+| `Operations workspace` | Sign in to view simulated flights and chat, manage fleet, and, for administrators, manage accounts, roles, permissions, assignments, and audit. |
 | `Architecture overview` | Explain C++, JSONL, REST, SQLite, and React boundaries. |
 | `Download report` | Export the selected replay as a Markdown report. |
 
@@ -188,15 +196,89 @@ password reset, and account deactivation revoke affected sessions.
 Login is rate-limited. Failure always reports the same username-or-password
 message so it doesn't reveal whether an account exists.
 
-## 8. Roles and aircraft access
+## 8. Use the simulated operations map
+
+After sign-in, `Operations map` is the default workspace tab. The map uses
+packaged Natural Earth geometry and does not contact a map tile service. Every
+position, route, and telemetry value is synthetic.
+
+![Authenticated operations map with three simulated aircraft](assets/operations-map-preview.png)
+
+The left flight board lists visible flights and their current condition. Select
+a row or map marker to open its detail rail. A keyboard user can focus a marker
+and press `Enter` or `Space`. The rail shows:
+
+- primary owner label and the current account's assignment;
+- latitude, longitude, heading, speed, and route scope;
+- selected scenario and its looping clock;
+- the current six-subsystem telemetry snapshot;
+- flight chat and any allowed controls.
+
+The condition tag is a presentation summary of stored C++ subsystem health. It
+does not replace the C++ five-state timeline shown by recorded replay.
+
+### Place or move a flight
+
+An administrator can select `Place aircraft` for any `ACTIVE` aircraft. A
+non-administrator needs an `OWNER` assignment and `FLIGHT_PLACE_OWN`. Choose an
+unused aircraft, one archived run, route scope, speed from 400 to 1100 km/h,
+and a starting point. Click the map or type latitude from -85 to 85 and
+longitude from -180 to 180.
+
+Scope codes use these rules:
+
+| Scope | Code |
+|---|---|
+| `WORLD` | The API stores the canonical `WORLD` code; the UI displays `World`. |
+| `CONTINENT` | `AF`, `AN`, `AS`, `EU`, `NA`, `OC`, or `SA`. |
+| `COUNTRY` | A real ISO 3166-1 alpha-3 code, such as `POL`. |
+
+Only an administrator or an owner with `FLIGHT_RECONFIGURE_OWN` sees the move
+control. Only an administrator or an owner with `FLIGHT_REMOVE_OWN` sees the
+remove control. Each aircraft can have one active flight. Reconfiguration uses
+the visible flight version, so a stale update returns HTTP 409. A mapped
+aircraft must remain `ACTIVE` until its flight is removed.
+
+The map position uses accelerated synthetic motion for visibility. The chosen
+scenario telemetry advances at wall-clock speed and returns to timestamp zero
+after its 40 to 55 second recorded duration. The two clocks are independent.
+
+### Read and send flight chat
+
+Any active user assigned to the aircraft can read its chat. `CHAT_SEND` enables
+text and location messages. A telemetry message also requires `OWNER` and
+`TELEMETRY_SHARE`. Administrators bypass these checks.
+
+Messages accept 1 to 500 characters. The server sets sender and time and builds
+location or telemetry payloads from its current flight snapshot. Each active
+flight retains its latest 500 messages until removal. The API returns at most
+200 recent messages when the room opens.
+
+### Connection and session-demo states
+
+`SignalR connected` means the browser receives authorized changes from the
+API. After a reconnect, it reloads the REST snapshot before continuing. If the
+hub cannot connect, the browser refreshes the REST snapshot every five seconds.
+Event sequence checks prevent a delayed update from restoring a marker after a
+newer removal.
+Logout, password reset, deactivation, or session expiry prevents later
+delivery on that connection. Role and assignment changes alter which flights
+the account receives.
+
+If the operations endpoints are unavailable because of a network, 404, or
+server error, the map shows `Session demo`. Its temporary flights and messages
+exist only in browser memory. They are not stored API records. An authentication
+failure signs the account out instead of starting the session demo.
+
+## 9. Roles, aircraft access, and operation permissions
 
 Roles apply across the application:
 
 | Role | Permissions |
 |---|---|
-| `Admin` | Manage users, roles, aircraft, assignments, and audit records. |
-| `Operator` | Create aircraft; update aircraft where the account is `OWNER` or `MAINTAINER`. |
-| `Viewer` | Read aircraft assigned to the account. |
+| `Admin` | Manage users, roles, operation permissions, aircraft, assignments, active flights, and audit records. |
+| `Operator` | Create aircraft; update aircraft where the account is `OWNER` or `MAINTAINER`; receive all five operation permissions by default. |
+| `Viewer` | Read assigned aircraft and receive `CHAT_SEND` by default. |
 
 Aircraft assignment levels apply to one aircraft:
 
@@ -209,7 +291,17 @@ Aircraft assignment levels apply to one aircraft:
 An administrator sees all aircraft even without an assignment. Other users see
 only assigned records.
 
-## 9. Manage aircraft
+The five account operation permissions are `FLIGHT_PLACE_OWN`,
+`FLIGHT_RECONFIGURE_OWN`, `FLIGHT_REMOVE_OWN`, `CHAT_SEND`, and
+`TELEMETRY_SHARE`. Aircraft ownership is still required for the three flight
+controls and telemetry sharing. `MAINTAINER` does not grant map control.
+
+Role defaults apply only while no override rows exist. In `People and roles`,
+an administrator can save the complete permission set for one account. Saving
+no checked permissions creates an explicit empty override rather than restoring
+role defaults. Custom roles provide no operation permission by themselves.
+
+## 10. Manage aircraft
 
 ### Create
 
@@ -222,13 +314,16 @@ An `Admin` or `Operator` can select `Add aircraft`, then provide:
 - optional notes up to 1000 characters.
 
 The creator becomes the first `OWNER`. Tail numbers are case-insensitive and
-unique.
+unique. When several owners exist, the map labels the earliest assignment as
+the primary owner; the assignments panel lists every owner.
 
 ### Update
 
 Select an aircraft, edit its fields, and save. The browser submits the visible
 revision as `expected_version`. If someone changed the record first, the API
-returns a conflict. Refresh the record, review the newer values, and retry.
+returns a conflict. Refresh the record, review the newer values, and retry. If
+the aircraft has an active map flight, remove that flight before changing the
+status from `ACTIVE`.
 
 ### Assign accounts
 
@@ -239,9 +334,11 @@ owner is assigned.
 ### Delete
 
 Only an administrator can delete aircraft. Deletion also removes its
-assignments. The audit record retains the actor and deleted aircraft identity.
+assignments. Remove an active map flight first; the API rejects aircraft
+deletion while that flight exists. The audit record retains the actor and
+deleted aircraft identity.
 
-## 10. Manage users and roles
+## 11. Manage users and roles
 
 Administrators can open `People and roles`.
 
@@ -269,17 +366,25 @@ Create a role with a name and optional description. Custom roles are labels
 until application policy assigns them meaning. Delete is available only when
 no user has the role. Built-in roles cannot be deleted.
 
-## 11. Read the audit log
+### Set operation permissions
+
+Use the five operation checkboxes on a user card, then save. The saved set
+replaces role defaults for that account. Admin accounts still bypass all five
+checks. Permission changes create audit entries.
+
+## 12. Read the audit log
 
 Administrators can open `Audit log` to view the latest 50 changes. Each row has
 a timestamp, actor, action, and entity. Recorded actions include login, logout,
 bootstrap, user creation, role and status changes, password reset, role
 creation or deletion, aircraft changes, and assignment changes.
+The log also records operation-permission replacement and active-flight place,
+reconfigure, and remove actions.
 
 The log supports review of this local demonstration. It is not a regulated or
 tamper-evident audit system.
 
-## 12. Export a replay report
+## 13. Export a replay report
 
 Select `Download report` after an artifact loads. The browser downloads:
 
@@ -291,7 +396,7 @@ The report contains metadata, source artifact, configuration, final
 statistics, state transitions, diagnostic events, and import warnings. If no
 file appears, allow downloads for `localhost` and try again.
 
-## 13. Run the native simulator
+## 14. Run the native simulator
 
 Follow [Build, install, and run](build-and-run.md), then list scenarios:
 
@@ -311,7 +416,7 @@ Run one scenario:
 ./build/debug/aeroguard \
   --scenario simulated-overheating \
   --seed 42 \
-  --duration 9000 \
+  --duration 45000 \
   --tick 100 \
   --output demo-output/overheating.jsonl
 ```
@@ -340,15 +445,21 @@ Export dashboard data:
 Reproduce an output by keeping scenario definition, seed, duration, and tick
 interval unchanged. Automatic browser looping never affects simulator data.
 
-## 14. Troubleshooting
+## 15. Troubleshooting
 
 | Symptom | Action |
 |---|---|
 | Port 8080 doesn't open | Run `docker compose ps`; check whether another process uses the port. |
 | API is unhealthy | Run `docker compose logs api`; confirm `.env` exists and the data volume is writable. |
-| Login fails on a fresh database | Set a non-placeholder `AEROGUARD_ADMIN_PASSWORD` before the first start. |
-| Login fails on an existing database | Use the password that created the account; changing `.env` doesn't reset an existing user. |
+| Login fails on a fresh direct API database | Set a password with 12 to 128 characters and at least three of lowercase, uppercase, digits, and symbols. Local Compose also accepts an explicitly selected short Development password. |
+| Login fails after changing Compose `.env` | Run `docker compose up --detach --force-recreate api`, then use the new configured password. Startup synchronization revokes the administrator's older sessions. |
 | Dashboard labels data as bundled | The API isn't reachable. Confirm `/api/health` succeeds through port 8080. |
+| Map shows `REST snapshot` instead of `SignalR connected` | Confirm `/hubs/operations` reaches the API through Vite or nginx. The map keeps polling REST every five seconds. |
+| Map shows `Session demo` | The operations API could not load. Temporary map changes are not stored; restore the API and sign in again if needed. |
+| `Place aircraft` is unavailable | Use an `ACTIVE` aircraft with an `OWNER` assignment and `FLIGHT_PLACE_OWN`, or sign in as an administrator. |
+| A flight control is hidden | Check the current assignment and matching operation permission. `MAINTAINER` can edit an aircraft record but cannot control its map flight. |
+| Chat is read-only | The account lacks `CHAT_SEND`, is inactive, or is no longer assigned to the aircraft. |
+| An operation returns HTTP 429 | Wait for the one-minute fixed window to renew. Login allows 30 requests per source address; flight writes, chat writes, and hub negotiation allow 90, 60, and 30 requests per account. |
 | Scenario manifest cannot load | Generate `frontend/public/data/manifest.json`; use Vite or nginx, not `file://`. |
 | JSONL artifact cannot load | Confirm the referenced file exists and uses schema version 1; regenerate edited data. |
 | Chart waits for samples | Let the automatic replay advance until two numeric samples are visible. |
@@ -358,25 +469,30 @@ interval unchanged. Automatic browser looping never affects simulator data.
 | Report doesn't download | Allow downloads for the local site and confirm `Artifact loaded`. |
 | CLI reports an unknown scenario | Run `--list-scenarios` and check `--scenarios-dir`. |
 
-## 15. Suggested portfolio demonstration
+## 16. Suggested portfolio demonstration
 
 1. Show `Recorded runs` and select Communication interruption.
 2. Explain that selection resets the virtual clock and loops automatically.
 3. Point out the global `FAULT` while unaffected subsystem cards continue.
 4. Filter the timeline to Communication Module and show heartbeat evidence.
 5. Show `RECOVERY` before the state returns to `NORMAL`.
-6. Sign in and create a Viewer account and an aircraft.
-7. Assign that Viewer, then explain the difference between application roles
-   and per-aircraft access.
-8. Show the audit entry and one stale-version protection test in the API suite.
-9. Finish with the architecture view: C++ decides, JSONL records, .NET archives,
-   SQLite stores, and React presents.
+6. Sign in and place an owned aircraft on the world map with one recorded run.
+7. Show the independent moving marker and looping C++ telemetry clock.
+8. Assign a Viewer, send one location message, and explain the difference
+   between role defaults, aircraft assignment, and account overrides.
+9. Show an operation-permission or flight audit entry and one stale-version
+   protection test in the API suite.
+10. Finish with the architecture view: C++ decides, JSONL records, .NET
+    archives and distributes authorized snapshots, SQLite stores, and React
+    presents.
 
 Don't claim aircraft validation, hard real-time behaviour, certification,
 production deployment, or a hosted CI pass that hasn't been observed.
 
-## 16. Verification references
+## 17. Verification references
 
 [TASKS.md](../TASKS.md) records measured build and test results. The
 [traceability matrix](traceability.md) maps each requirement to evidence. The
 [API guide](../backend/README.md) documents routes and configuration.
+[Security and authorization rules](security-and-authorization.md) records the
+map and chat policy.
