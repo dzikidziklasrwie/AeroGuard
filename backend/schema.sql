@@ -123,6 +123,57 @@ CREATE TABLE IF NOT EXISTS audit_log (
     FOREIGN KEY (actor_user_id) REFERENCES users(id) ON DELETE SET NULL
 );
 
+CREATE TABLE IF NOT EXISTS user_operation_permissions (
+    user_id         INTEGER NOT NULL,
+    permission      TEXT NOT NULL
+                        CHECK (permission IN (
+                            'FLIGHT_PLACE_OWN',
+                            'FLIGHT_REMOVE_OWN',
+                            'FLIGHT_RECONFIGURE_OWN',
+                            'CHAT_SEND',
+                            'TELEMETRY_SHARE'
+                        )),
+    enabled         INTEGER NOT NULL CHECK (enabled IN (0, 1)),
+    assigned_by     INTEGER NOT NULL,
+    updated_at_utc  TEXT NOT NULL,
+    PRIMARY KEY (user_id, permission),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (assigned_by) REFERENCES users(id) ON DELETE RESTRICT
+);
+
+CREATE TABLE IF NOT EXISTS active_flights (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    aircraft_id     INTEGER NOT NULL UNIQUE,
+    run_id          INTEGER NOT NULL,
+    scope_type      TEXT NOT NULL
+                        CHECK (scope_type IN ('WORLD', 'CONTINENT', 'COUNTRY')),
+    scope_code      TEXT NOT NULL CHECK (length(scope_code) BETWEEN 2 AND 16),
+    center_latitude REAL NOT NULL CHECK (center_latitude BETWEEN -85.0 AND 85.0),
+    center_longitude REAL NOT NULL CHECK (center_longitude BETWEEN -180.0 AND 180.0),
+    speed_kph       REAL NOT NULL CHECK (speed_kph BETWEEN 400.0 AND 1100.0),
+    route_seed      INTEGER NOT NULL CHECK (route_seed >= 0),
+    version         INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1),
+    placed_by       INTEGER NOT NULL,
+    started_at_utc  TEXT NOT NULL,
+    updated_at_utc  TEXT NOT NULL,
+    FOREIGN KEY (aircraft_id) REFERENCES aircraft(id) ON DELETE RESTRICT,
+    FOREIGN KEY (run_id) REFERENCES runs(id) ON DELETE RESTRICT,
+    FOREIGN KEY (placed_by) REFERENCES users(id) ON DELETE RESTRICT
+);
+
+CREATE TABLE IF NOT EXISTS flight_messages (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    flight_id       INTEGER NOT NULL,
+    sender_user_id  INTEGER NOT NULL,
+    message         TEXT NOT NULL CHECK (length(message) BETWEEN 1 AND 500),
+    share_type      TEXT NOT NULL
+                        CHECK (share_type IN ('TEXT', 'LOCATION', 'TELEMETRY')),
+    payload_json    TEXT NOT NULL DEFAULT '{}',
+    sent_at_utc     TEXT NOT NULL,
+    FOREIGN KEY (flight_id) REFERENCES active_flights(id) ON DELETE CASCADE,
+    FOREIGN KEY (sender_user_id) REFERENCES users(id) ON DELETE RESTRICT
+);
+
 CREATE INDEX IF NOT EXISTS idx_user_roles_role
     ON user_roles(role_id, user_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_user_expiry
@@ -133,6 +184,49 @@ CREATE INDEX IF NOT EXISTS idx_aircraft_status
     ON aircraft(status, tail_number);
 CREATE INDEX IF NOT EXISTS idx_audit_log_occurred
     ON audit_log(occurred_at_utc DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_active_flights_run
+    ON active_flights(run_id, id);
+CREATE INDEX IF NOT EXISTS idx_flight_messages_flight
+    ON flight_messages(flight_id, sent_at_utc DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_user_operation_permissions_user
+    ON user_operation_permissions(user_id, permission);
+
+CREATE TRIGGER IF NOT EXISTS protect_active_flight_aircraft_delete
+BEFORE DELETE ON aircraft
+WHEN EXISTS (
+    SELECT 1
+    FROM active_flights
+    WHERE active_flights.aircraft_id = OLD.id
+)
+BEGIN
+    SELECT RAISE(ABORT, 'an aircraft with an active flight cannot be deleted');
+END;
+
+CREATE TRIGGER IF NOT EXISTS protect_active_flight_aircraft_status
+BEFORE UPDATE OF status ON aircraft
+WHEN NEW.status <> 'ACTIVE'
+    AND EXISTS (
+        SELECT 1
+        FROM active_flights
+        WHERE active_flights.aircraft_id = OLD.id
+    )
+BEGIN
+    SELECT RAISE(ABORT, 'an aircraft with an active flight must remain active');
+END;
+
+CREATE TRIGGER IF NOT EXISTS trim_flight_message_history
+AFTER INSERT ON flight_messages
+BEGIN
+    DELETE FROM flight_messages
+    WHERE flight_id = NEW.flight_id
+      AND id NOT IN (
+          SELECT id
+          FROM flight_messages
+          WHERE flight_id = NEW.flight_id
+          ORDER BY sent_at_utc DESC, id DESC
+          LIMIT 500
+      );
+END;
 
 CREATE TRIGGER IF NOT EXISTS protect_last_active_admin_role
 BEFORE DELETE ON user_roles
