@@ -16,6 +16,7 @@ jobs:
   cpp:
     name: C++ / ${{ matrix.label }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -27,19 +28,45 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
-      - name: Enable the MSVC developer environment
+      - name: Configure, build, and test with MSVC
         if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
+        shell: pwsh
+        run: |
+          $vswherePath = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+          $installationPath = & $vswherePath `
+            -latest `
+            -products '*' `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+          if (-not $installationPath) {
+            throw 'A Visual Studio installation with the C++ toolchain was not found.'
+          }
+          Import-Module (Join-Path $installationPath 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll')
+          Enter-VsDevShell `
+            -VsInstallPath $installationPath `
+            -SkipAutomaticLocation `
+            -DevCmdArguments '-arch=x64 -host_arch=x64'
+          cmake --preset debug -DAEROGUARD_WARNINGS_AS_ERRORS=ON
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build --preset debug
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --preset debug --output-on-failure
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Configure with strict warnings
+        if: runner.os != 'Windows'
         run: cmake --preset debug -DAEROGUARD_WARNINGS_AS_ERRORS=ON
 
       - name: Build
+        if: runner.os != 'Windows'
         run: cmake --build --preset debug
 
       - name: Run native tests
+        if: runner.os != 'Windows'
         run: ctest --preset debug --output-on-failure
 
       - name: Generate replay artifacts
@@ -53,7 +80,7 @@ jobs:
             --seed 42
 
       - name: Upload native build
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: native-${{ matrix.os }}
           path: |
@@ -63,7 +90,7 @@ jobs:
 
       - name: Upload generated replay data
         if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: simulator-replays
           path: demo-output/
@@ -72,9 +99,12 @@ jobs:
   sanitizers:
     name: C++ / ASan + UBSan
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Configure sanitizer build
         run: cmake --preset sanitizers -DAEROGUARD_WARNINGS_AS_ERRORS=ON
@@ -91,9 +121,12 @@ jobs:
   static-analysis:
     name: C++ / clang-tidy
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Install clang-tidy
         run: |
@@ -116,15 +149,18 @@ jobs:
   frontend:
     name: Frontend / lint + test + build
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: frontend
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -149,7 +185,7 @@ jobs:
         run: npm run build
 
       - name: Upload dashboard bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: dashboard-dist
           path: frontend/dist/
@@ -158,12 +194,15 @@ jobs:
   backend:
     name: API / build + integration tests
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Set up .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 10.0.x
 
@@ -181,7 +220,7 @@ jobs:
 
       - name: Upload API test report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: backend-test-report
           path: backend/**/TestResults/backend-tests.trx
@@ -190,12 +229,15 @@ jobs:
   docker:
     name: Docker stack smoke test
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [cpp, frontend, backend]
     env:
       AEROGUARD_ADMIN_PASSWORD: Ci-Only-Admin-Password-42!
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Validate Compose configuration
         run: docker compose config --quiet
