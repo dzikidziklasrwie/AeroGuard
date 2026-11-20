@@ -92,6 +92,33 @@ flowchart TB
 | `backend/src/AeroGuard.Api/Operations` | Flight authorization, synthetic map motion, stored telemetry selection, chat, and SignalR delivery | Does not evaluate fictional sensor thresholds or C++ state transitions |
 | `backend/src/AeroGuard.Api/Data` | SQLite connection and schema initialization | All values pass through parameters |
 
+## Design principles and pattern map
+
+The project uses named patterns only where the code has the matching boundary.
+The table points to concrete types rather than treating a directory layout as
+proof of a pattern.
+
+| Pattern or principle | Concrete use | Resulting boundary |
+|---|---|---|
+| Application composition | `run_scenario` creates `JsonLinesLogger` and `Simulator`; the `Simulator` constructor selects `SimulatedHardware` and `ManualSimulationClock` when no owned alternatives are supplied | Executable composition stays in `main`; default environment choices stay in the `Simulator` constructor |
+| Dependency injection | `Simulator` accepts `ILogSink&` plus optional `unique_ptr<IHardwareAbstraction>` and `unique_ptr<ISimulationClock>` dependencies | Simulation orchestration targets contracts while the executable uses explicit defaults |
+| Finite state machine | `SystemStateMachine` owns the explicit transition allow-list | Health observations cannot assign an arbitrary overall state |
+| Repository | Identity, fleet, and operations repositories implement narrow contracts over parameterized SQLite commands and row mapping | Their service code does not depend on SQL text or connection details |
+| Application service | Identity, fleet, and operations services enforce permissions and invariants | HTTP translation and storage mechanics remain separate from policy |
+| Adapter | `SimulatedHardware` implements `IHardwareAbstraction`; the six subsystem classes consume that contract | The core has no dependency on a physical device or vendor API |
+| Snapshot plus event stream | REST supplies a complete authorized flight set; SignalR supplies sequenced changes | Reconnect reloads the snapshot and stale events cannot restore removed data |
+| RAII and value semantics | Streams, containers, variants, optionals, and queue storage own their resources | Core code has no manual `new`/`delete` ownership path |
+
+### SOLID use and limits
+
+| Principle | Project evidence | Deliberate limit |
+|---|---|---|
+| Single responsibility | Validation, heartbeat aggregation, transition policy, serialization, HTTP mapping, authorization, and persistence are separate components | `Simulator` still coordinates one full tick because record order is part of the contract |
+| Open/closed | Scenarios extend behaviour through data, while identity, fleet, and operations storage sits behind repository interfaces | The six telemetry payloads form a closed `std::variant`; a new subsystem must update visitors and serializers so the compiler exposes every affected site |
+| Liskov substitution | Six concrete subsystem classes are stored as `unique_ptr<ISubsystem>` and polled through the same `id` and `poll` contract | The subsystem set is closed by `make_subsystems`; adding one also updates the typed payload and serialization contract |
+| Interface segregation | `ISimulationClock` and `ISubsystem` expose small cohesive contracts; `ILogSink` groups only simulation record writes | `IHardwareAbstraction` groups all six read operations and is broader than any one subsystem requires |
+| Dependency inversion | Simulation policy depends on clock and hardware abstractions, while API services depend on repository contracts | SQLite, JSONL, and SignalR remain concrete choices at their outer adapters |
+
 ## One simulation tick
 
 ```mermaid
@@ -257,6 +284,13 @@ deleting the flight deletes those chat rows. A mapped aircraft must remain
 Natural Earth `world-atlas` data and requires no map tile service. When the
 operations API cannot load, React labels its temporary memory-only state as a
 session demo.
+
+The route calculator normalizes longitude at the antimeridian and clamps
+latitude to the accepted -85 to 85 range. React validates each REST or SignalR
+coordinate again before projection. Its aircraft layer uses the projected
+sphere as an SVG clip path, and labels point toward the map center. These two
+boundaries prevent malformed updates, aircraft icons, labels, and draft
+markers from appearing outside the published world geometry.
 
 Chat authorization and insertion share one SQL statement, so an assignment or
 permission cannot be revoked between a separate check and the write. During a
