@@ -6,28 +6,28 @@ The current feature checks run on 2026-11-20 reported:
 
 - The native suite passed 45/45 CTest checks, including the seven-scenario
   40-to-55-second duration rule.
-- The locked frontend install passed lint, typecheck, 34/34 Vitest tests in 9
-  files, including stale live-event ordering; the production build and
-  dependency audit also passed, and the audit reported 0 vulnerabilities.
-- The .NET suite passed 48/48 xUnit tests, including administrator password synchronization, operations authorization,
-  motion, country/polar validation, active-flight status, chat, hub token scope,
-  and revoked-session recipient checks.
+- The locked frontend install passed lint, typecheck, 37/37 Vitest tests in 9
+  files, including stale live-event ordering and map containment; the
+  production build and dependency audit also passed, and the audit reported 0
+  vulnerabilities.
+- The .NET suite passed 53/53 xUnit test cases, including administrator
+  password synchronization, operations authorization, bounded route motion,
+  country/polar validation, active-flight status, chat, hub token scope, and
+  revoked-session recipient checks.
 
-The earlier published revision supplied these platform and deployment checks:
+The feature branch supplied these platform and deployment checks:
 
-- MSVC 19.51 Debug with `/WX`, Ubuntu 24.04 with GCC 13.3 and `-Werror`, and
-  GCC 13.3 with ASan/UBSan each passed the then-current 44-test native suite.
-- Clang/clang-tidy 18.1 completed the analysis build.
+- GitHub Actions run
+  [`44812965465`](https://github.com/dzikidziklasrwie/AeroGuard/actions/runs/44812965465)
+  passed the MSVC, GCC, ASan/UBSan, clang-tidy, frontend, API, and Docker jobs
+  on commit `0488ea0`.
 - The non-root Docker API image built, imported seven runs, reported ready, and
   accepted the configured administrator login.
-- GitHub Actions run
-  [`44619482612`](https://github.com/dzikidziklasrwie/AeroGuard/actions/runs/44619482612)
-  passed the MSVC, GCC, sanitizer, clang-tidy, frontend, API, and Docker jobs.
-  This run predates the simulated world-map feature.
+- The workflow uses Node 24 action runtimes and sets a timeout for every job.
 
-The current revision has no hosted-CI result. A local headless-Chrome session
-completed the nginx WebSocket handshake and received four SignalR frames. The
-automated tests don't connect a real SignalR WebSocket client end to end.
+A local headless-Chrome session completed the nginx WebSocket handshake and
+received four SignalR frames. The automated tests negotiate SignalR but don't
+connect a real WebSocket client end to end.
 
 `Verified locally` records direct command evidence. `Verified in hosted CI`
 means the published feature-branch run completed successfully.
@@ -62,9 +62,9 @@ means the published feature-branch run completed successfully.
 | REQ-026 | `usePlayback` fake-timer test covers automatic start, end-to-start looping, and reset on dataset change; App test covers run selection | Frontend hook/component | Verified locally |
 | REQ-027 | App test checks statistics, architecture, and enabled report control; `buildSimulationReport` validates report content | Frontend component/unit | Verified locally |
 | REQ-028 | Malformed/unknown/missing-metadata parser cases; App manifest-error and retry test | Frontend unit/component | Verified locally |
-| REQ-029 | Previous-revision MSVC and containerized GCC strict builds; current 45-test local run; CI matrix definition | Portability/CI | Current feature verified locally; hosted rerun pending |
-| REQ-030 | Current native, frontend, and .NET checks; previous-revision ASan/UBSan, clang-tidy, and hosted jobs | Analysis/CI | Current feature verified locally; hosted analysis rerun pending |
-| REQ-031 | Current multi-stage Docker build, service health checks, authenticated three-marker browser capture, nginx WebSocket handshake, and received SignalR frames; previous hosted Docker job | Docker/browser/review | Current feature verified locally; hosted rerun pending |
+| REQ-029 | Strict MSVC and GCC builds plus the current 45-test native suite in run `44812965465` | Portability/CI | Verified in hosted CI |
+| REQ-030 | Native, frontend, API, ASan/UBSan, and clang-tidy jobs in run `44812965465` | Analysis/CI | Verified in hosted CI |
+| REQ-031 | Multi-stage Docker build, service health checks, authenticated API smoke request, and SignalR negotiation in run `44812965465`; local browser WebSocket and three-marker capture | Docker/browser/review | Docker verified in hosted CI; full browser path verified locally |
 | REQ-032 | README, user-manual, map boundary notice, and limitations review | Documentation/UI review | Verified locally |
 | REQ-033 | `ArtifactImporterTests` cover first import, idempotent repeat, tamper rejection, and rollback; API factory imports a new temporary database | .NET integration | Verified locally |
 | REQ-034 | `ApiEndpointTests` cover scenarios, run queries, replay bytes, ordered/filtered records, validation, OpenAPI, and missing resources | .NET HTTP integration | Verified locally |
@@ -81,11 +81,12 @@ means the published feature-branch run completed successfully.
 | REQ-045 | Operator, Viewer, override, and Admin flight-operation cases; rate-limit policy review | .NET HTTP integration/review | Partly verified; limit-exhaustion test pending |
 | REQ-046 | `PermissionOverrideCanStopOwnerFromRemovingFlight`; `ExplicitEmptyPermissionOverrideRemovesOperatorDefaults`; Admin endpoint and audit review | .NET HTTP integration/review | Verified locally |
 | REQ-047 | Placement, polar-coordinate, ISO country-code, invalid-route, stale-version, archive-run, active-flight status/deletion, and frontend request-shape checks | .NET/frontend integration | Verified locally |
-| REQ-048 | `FlightMotionTests` cover elapsed motion, recorded-duration loop, six-subsystem completeness, and fault-to-critical mapping | .NET unit | Verified locally |
+| REQ-048 | `FlightMotionTests` cover elapsed motion, recorded-duration loop, route bounds, six-subsystem completeness, and fault-to-critical mapping | .NET unit | Verified in hosted CI |
 | REQ-049 | Hub authentication/query-scope and revoked-session tests; SignalR client reconnect-resync and stale-event-ordering tests; local Chrome/nginx WebSocket handshake and frames; per-flight failure-isolation review | .NET/frontend/browser/review | Partly verified; automated real-client revocation, failure-injection, and limit-exhaustion tests pending |
 | REQ-050 | Server-generated share, hidden-chat, owner-gating, 500-character checks, and atomic insert plus 500-row retention-trigger review; rate-limit policy review | .NET/frontend integration/storage review | Partly verified; atomic-race, limit-exhaustion, and retention-cap tests pending |
 | REQ-051 | `REQ051_ScenarioDuration.KeepsEveryPackagedScenarioBetween40And55Seconds`; export, importer, and authentic-data duration checks | C++/CLI/.NET/frontend contract | Verified locally |
 | REQ-052 | `OperationsMap` labelled session-demo and authentication handling cases; storage review | Frontend component/review | Verified locally |
+| REQ-053 | `RouteStaysWithinPublishedCoordinateBounds`; `OperationsMap` boundary clipping, inward-label, out-of-range live-update, and REST reconfiguration cases | .NET unit/frontend component | Verified in hosted CI |
 
 [TASKS.md](../TASKS.md) records the detailed commands, versions, and hosted
 run link.

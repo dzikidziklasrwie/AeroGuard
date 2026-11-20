@@ -2989,7 +2989,7 @@ footer p:last-child {
   width: 100%;
   height: auto;
   min-height: 410px;
-  overflow: visible;
+  overflow: hidden;
 }
 
 .world-map-stage.placement-active svg {

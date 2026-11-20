@@ -38,6 +38,7 @@ Repository: [github.com/dzikidziklasrwie/AeroGuard](https://github.com/dzikidzik
 | Queryable archive | ASP.NET Core Minimal API validates JSONL and imports unchanged replay bytes and ordered records into SQLite |
 | Access control | Revocable opaque sessions, roles, aircraft assignments, per-account operation permissions, protected invariants, and audit records |
 | Simulated operations | Packaged Natural Earth map, assigned flights, role-aware chat, REST snapshots, and session-checked SignalR updates |
+| Map containment | Validated coordinates, bounded route calculations, sphere-clipped markers, and inward-facing labels at projection edges |
 | UI separation | React reads stored C++ output through REST or a static fallback; it doesn't recreate thresholds or state transitions |
 | Delivery | CMake presets, Windows/Linux CI, xUnit, clang-tidy, ASan/UBSan, Dependabot, and multi-stage Docker |
 
@@ -81,22 +82,22 @@ Observed locally on 2026-11-20:
 | Check | Result |
 |---|---|
 | Current native feature suite | 45/45 CTest checks passed, including all seven 40-to-55-second scenarios |
-| ASP.NET Core / SQLite | 48/48 xUnit tests passed |
-| React / TypeScript | `npm ci`, lint, typecheck, 34/34 Vitest tests in 9 files, and production build passed |
+| ASP.NET Core / SQLite | 53/53 xUnit test cases passed |
+| React / TypeScript | `npm ci`, lint, typecheck, 37/37 Vitest tests in 9 files, and production build passed |
 | Dependency audit | 0 known npm vulnerabilities reported |
 | Current Docker/browser path | API and dashboard images built; Compose reported both services healthy; Chrome completed the nginx WebSocket handshake and received four SignalR frames |
-| Previous-revision portability | MSVC, GCC, ASan/UBSan, and clang-tidy checks passed before the world-map feature |
+| Hosted portability | GitHub Actions passed MSVC, GCC, ASan/UBSan, clang-tidy, frontend, API, and Docker jobs on the map-containment feature branch |
 
 GitHub Actions run
-[`44619482612`](https://github.com/dzikidziklasrwie/AeroGuard/actions/runs/44619482612)
-passed the MSVC, GCC, sanitizer, clang-tidy, frontend, API, and Docker jobs on
-the earlier feature branch revision. It predates the simulated world map. The
-current revision has no hosted-CI result. Its browser, nginx WebSocket, and
-Docker network path passed a local manual check, but the automated suites don't
-connect a real SignalR WebSocket client end to end. We don't claim a coverage
-percentage. The in-memory connection registry and per-recipient snapshot work
-target a small single-instance demonstration, not a distributed or high-volume
-fleet. [TASKS.md](TASKS.md) records the command evidence.
+[`44812965465`](https://github.com/dzikidziklasrwie/AeroGuard/actions/runs/44812965465)
+passed all seven jobs on feature commit `0488ea0`, including the map-boundary
+regression tests and Node 24 workflow actions. The automated suites negotiate
+SignalR but don't connect a real WebSocket client end to end; the browser,
+nginx WebSocket, and Docker network path passed a separate local check. We
+don't claim a coverage percentage. The in-memory connection registry and
+per-recipient snapshot work target a small single-instance demonstration, not
+a distributed or high-volume fleet. [TASKS.md](TASKS.md) records the command
+evidence.
 
 ## Run the demo
 
@@ -188,8 +189,8 @@ docs/                Architecture, requirements, tests, decisions, and learning 
 | Read this | For |
 |---|---|
 | [User manual](docs/user-manual.md) | Start the demo, operate the dashboard, interpret scenarios, export reports, and troubleshoot |
-| [Architecture](docs/architecture.md) | Component boundaries, runtime flow, ownership, and data contract |
-| [Functional requirements](docs/requirements.md) | Testable `REQ-001` to `REQ-052` behaviour |
+| [Architecture](docs/architecture.md) | Component boundaries, runtime flow, pattern use, SOLID mapping, ownership, and data contract |
+| [Functional requirements](docs/requirements.md) | Testable `REQ-001` to `REQ-053` behaviour |
 | [State machine](docs/state-machine.md) | Complete valid and invalid transition rules |
 | [Telemetry and scenarios](docs/telemetry-and-scenarios.md) | Fictional fields, thresholds, fault injections, and schedules |
 | [Test strategy](docs/testing.md) | Test layers, risk cases, commands, and evidence policy |

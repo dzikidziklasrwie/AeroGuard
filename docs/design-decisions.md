@@ -216,3 +216,21 @@ SQL statement, avoiding a check-then-write revocation race.
 Trade-off. Saving an override replaces the complete set, including an
 explicitly empty set. The UI and API must show effective permissions so an
 administrator can distinguish role defaults from saved account policy.
+
+## DD-017 - Validate coordinates and clip the projected map layer
+
+Decision. The API accepts flight centers only within latitude -85 to 85 and
+longitude -180 to 180. `FlightMotion` normalizes every calculated longitude
+and bounds every latitude. React repeats the finite-range check before D3
+projection and clips aircraft, labels, and placement markers with the Natural
+Earth sphere path.
+
+Reason. Coordinate validation protects the data contract, while SVG clipping
+protects the rendered geometry. The two checks address different failure
+modes: a malformed update must not produce a transform, and a valid marker at
+the projection edge must not paint into the surrounding panel.
+
+Trade-off. A route can cross the antimeridian and reappear on the opposite map
+edge, which is correct for a world projection but is not a continuous wrapped
+track. Scope names choose route scale and descriptive metadata; they do not
+claim containment inside political border polygons.

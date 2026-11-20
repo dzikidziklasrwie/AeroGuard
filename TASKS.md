@@ -11,11 +11,11 @@ Snapshot date: 2026-11-20
 |---|---|---|
 | C++20 core, simulation, seven scenarios, and CLI | Complete in worktree | Clean MSVC and GCC builds with warnings as errors |
 | GoogleTest and CLI suite | 37 discovered GoogleTests plus 8 CLI CTests | Current local suite passed 45/45; previous revision passed 44/44 on MSVC, GCC, and GCC with ASan/UBSan |
-| React replay and operations dashboard | Recorded replay, packaged world map, flight chat, permission-aware controls, SignalR client, and REST fallback | ESLint, typecheck, 34/34 Vitest tests in 9 files, Vite build, and npm audit passed |
+| React replay and operations dashboard | Recorded replay, packaged world map, flight chat, permission-aware controls, SignalR client, and REST fallback | ESLint, typecheck, 37/37 Vitest tests in 9 files, Vite build, and npm audit passed |
 | JSONL/manifest producer-consumer contract | C++ export, seven authentic replays, parser, and manifest | All seven generated files loaded without parser warnings |
-| ASP.NET Core API, SQLite, accounts, fleet, and simulated operations | Minimal API, archive importer, bearer sessions, assignments, operation permissions, active flights, chat, session-aware SignalR delivery, and audit records | Current xUnit suite passed 48/48 |
+| ASP.NET Core API, SQLite, accounts, fleet, and simulated operations | Minimal API, archive importer, bearer sessions, assignments, operation permissions, active flights, chat, session-aware SignalR delivery, and audit records | Current xUnit suite passed 53/53 |
 | Documentation and CV material | User manual, requirements, design, build, tests, trade-offs, interview notes, and measured CV copy | Cross-checked against the current code and results |
-| Windows/Linux GitHub Actions | Workflow defines MSVC, GCC, sanitizers, clang-tidy, frontend, backend, and Docker jobs | Run `44619482612` passed every job before the world-map feature; current hosted rerun pending |
+| Windows/Linux GitHub Actions | Workflow defines MSVC, GCC, sanitizers, clang-tidy, frontend, backend, and Docker jobs with Node 24 action runtimes and explicit timeouts | Run `44812965465` passed all seven jobs on the map-containment feature branch |
 | Multi-stage Docker demo | Simulator data generation, .NET API, React build, nginx, SignalR proxy, and SQLite volume | Current images built; both services became healthy; Chrome completed one nginx WebSocket handshake and received four SignalR frames |
 | Portfolio visuals | Generated hero plus real dashboard and operations-map captures with provenance | Production dashboard captured at 1600 x 1200; authenticated map workspace captured at 1446 x 904 |
 
@@ -41,10 +41,12 @@ Snapshot date: 2026-11-20
 - [x] ISO country routes, mapped-aircraft `ACTIVE` invariant, atomic chat
   authorization, and 500-row per-flight chat retention.
 - [x] Per-flight broadcast failure isolation and stale live-event rejection.
+- [x] Coordinate validation, bounded route motion, sphere-clipped aircraft
+  layer, and inward-facing edge labels.
 - [x] Loopback-only direct Compose API port and one-hop nginx forwarded headers.
 - [x] Authentic C++ replay artifacts and producer-consumer contract test.
 - [x] Seven regenerated 40-to-55-second replay artifacts and duration checks.
-- [x] Functional requirements `REQ-001` through `REQ-052` and traceability.
+- [x] Functional requirements `REQ-001` through `REQ-053` and traceability.
 - [x] Architecture, state, sequence, deployment, and interview diagrams.
 - [x] Windows, Linux, frontend, Docker, install, and troubleshooting guides.
 - [x] End-user manual for dashboard operation, CLI use, report export, scenario
@@ -53,6 +55,8 @@ Snapshot date: 2026-11-20
   CV wording, visual assets, and asset provenance.
 - [x] CI jobs for MSVC, GCC, frontend, backend, sanitizers, clang-tidy, Docker
   smoke testing, and artifact upload.
+- [x] Node 24 action runtimes, per-job timeouts, read-only checkout credentials,
+  and a generated CI smoke-test password.
 
 ## Verification checklist
 
@@ -68,11 +72,11 @@ Snapshot date: 2026-11-20
 - [x] `npm ci`.
 - [x] `npm run lint`.
 - [x] `npm run typecheck`.
-- [x] `npm test -- --run`: 34/34 passed in 9 files.
+- [x] `npm test -- --run`: 37/37 passed in 9 files.
 - [x] `npm run build`.
 - [x] `npm audit --audit-level=moderate`: 0 vulnerabilities.
 - [x] Load all seven C++-generated replays through the frontend parser.
-- [x] Run 48/48 xUnit tests for the current API revision.
+- [x] Run 53/53 xUnit test cases for the current API revision.
 - [x] `dotnet format --verify-no-changes`: no changes reported.
 - [x] Build the multi-stage API/dashboard images and run archive, login, and
   HTTP smoke checks.
@@ -80,7 +84,7 @@ Snapshot date: 2026-11-20
 - [x] Linux GCC GitHub Actions job observed passing.
 - [x] Frontend, backend, sanitizer, analysis, and Docker GitHub Actions jobs
   observed passing.
-- [ ] Run the current world-map revision in hosted CI.
+- [x] Run the current map-containment revision in hosted CI.
 - [x] Verify a real browser SignalR client, nginx WebSocket upgrade, and Docker
   network path as one stack.
 - [ ] Fresh-clone README walkthrough of the published revision.
@@ -94,10 +98,10 @@ Snapshot date: 2026-11-20
 | Previous-revision dynamic analysis container | The same GCC build with AddressSanitizer and UndefinedBehaviorSanitizer; 44/44 tests passed with leak detection and halt-on-UB settings enabled. |
 | Previous-revision static analysis container | Ubuntu 24.04, Clang/clang-tidy 18.1.3; the analysis-enabled build completed. |
 | Current native | The current local suite passed 45/45, including the seven-scenario duration rule. |
-| Frontend | Node 24.13.1 and npm 11.8.0; the locked install, ESLint, TypeScript, 34/34 Vitest tests in 9 files, and Vite production build passed. `npm audit` reported 0 vulnerabilities. |
-| Backend | The current .NET suite passed 48/48 xUnit tests. |
+| Frontend | Node 24.13.1 and npm 11.8.0; the locked install, ESLint, TypeScript, 37/37 Vitest tests in 9 files, and Vite production build passed. `npm audit` reported 0 vulnerabilities. |
+| Backend | The current .NET suite passed 53/53 xUnit test cases. |
 | Current Docker/browser | API and dashboard images built from the feature worktree. Both services reported healthy. An authenticated headless Chrome session rendered three flight markers, completed one `/hubs/operations` WebSocket handshake through nginx, and received four WebSocket frames. |
-| GitHub Actions | [Run `44619482612`](https://github.com/dzikidziklasrwie/AeroGuard/actions/runs/44619482612) completed successfully with MSVC, GCC, ASan/UBSan, clang-tidy, frontend, API, and Docker jobs before the world-map feature. |
+| GitHub Actions | [Run `44812965465`](https://github.com/dzikidziklasrwie/AeroGuard/actions/runs/44812965465) completed successfully with MSVC, GCC, ASan/UBSan, clang-tidy, frontend, API, and Docker jobs on commit `0488ea0`. |
 | Visual review | Headless Chrome captured the production dashboard at 1600 x 1200 and the authenticated operations-map workspace at 1446 x 904 after API data loaded. |
 
 We don't claim a coverage percentage.

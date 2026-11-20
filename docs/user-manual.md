@@ -243,6 +243,12 @@ The map position uses accelerated synthetic motion for visibility. The chosen
 scenario telemetry advances at wall-clock speed and returns to timestamp zero
 after its 40 to 55 second recorded duration. The two clocks are independent.
 
+The API keeps generated coordinates inside latitude -85 to 85 and longitude
+-180 to 180. The browser checks the same limits before projection and clips
+markers and labels to the world outline. A route that crosses longitude 180
+reappears at longitude -180; this is an antimeridian crossing, not a flight
+leaving the simulated world.
+
 ### Read and send flight chat
 
 Any active user assigned to the aircraft can read its chat. `CHAT_SEND` enables

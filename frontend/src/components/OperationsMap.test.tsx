@@ -100,6 +100,10 @@ function apiMock({ flights = [flight], permissions = ['FLIGHT_PLACE_OWN', 'CHAT_
       const body = JSON.parse(String(init.body));
       return Promise.resolve(response({ ...flight, id: 45, ...body, version: 1 }));
     }
+    if (url === '/api/operations/flights/44' && init?.method === 'PUT') {
+      const body = JSON.parse(String(init.body));
+      return Promise.resolve(response({ ...flight, ...body, version: flight.version + 1 }));
+    }
     if (url === '/api/operations/flights') return Promise.resolve(response(flights));
     if (url === '/api/operations/permissions') return Promise.resolve(response(permissions));
     if (/^\/api\/operations\/flights\/\d+\/messages\?limit=100$/.test(url)) return Promise.resolve(response([]));
@@ -144,6 +148,32 @@ describe('OperationsMap', () => {
       onMessagePosted: expect.any(Function),
       onReconnected: expect.any(Function),
     })));
+  });
+
+  it('clips boundary markers to the globe and keeps their labels pointed inward', async () => {
+    const boundaryFlight = { ...flight, latitude: 85, longitude: 180 };
+    vi.stubGlobal('fetch', apiMock({ flights: [boundaryFlight] }));
+    render(<OperationsMap token="session-token" currentUser={owner} aircraft={aircraft} runs={runs} onUnauthorized={vi.fn()} />);
+
+    const marker = await screen.findByRole('button', { name: /N204AG, simulated position/ });
+    const layer = marker.closest('.map-aircraft-layer');
+    const label = marker.querySelector('.marker-label');
+
+    expect(layer).toHaveAttribute('clip-path', 'url(#operations-map-sphere-clip)');
+    expect(screen.getByTestId('operations-world-map').querySelector('#operations-map-sphere-clip path')).toHaveAttribute('d');
+    expect(label?.getAttribute('transform')).toMatch(/^translate\(-88 12\)$/);
+  });
+
+  it('does not project an out-of-range position from a live update', async () => {
+    vi.stubGlobal('fetch', apiMock());
+    render(<OperationsMap token="session-token" currentUser={owner} aircraft={aircraft} runs={runs} onUnauthorized={vi.fn()} />);
+    expect(await screen.findByRole('button', { name: /N204AG, simulated position/ })).toBeInTheDocument();
+    await waitFor(() => expect(hubMocks.connect).toHaveBeenCalled());
+    const handlers = hubMocks.connect.mock.calls[0][1];
+
+    act(() => handlers.onFlightUpdated({ ...flight, latitude: 91, event_sequence: 201 }));
+
+    expect(screen.queryByRole('button', { name: /N204AG, simulated position/ })).not.toBeInTheDocument();
   });
 
   it('uses a labelled session demo only when the operations API is unavailable', async () => {
@@ -215,6 +245,35 @@ describe('OperationsMap', () => {
       });
     });
     expect(await screen.findByText('Simulated flight added to the map.')).toBeInTheDocument();
+  });
+
+  it('updates the route area and position through the REST API', async () => {
+    const fetchMock = apiMock();
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    render(<OperationsMap token="session-token" currentUser={owner} aircraft={aircraft} runs={runs} onUnauthorized={vi.fn()} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Move aircraft' }));
+    await user.selectOptions(screen.getByLabelText('Scope'), 'CONTINENT');
+    await user.selectOptions(screen.getByLabelText('Continent'), 'EU');
+    await user.clear(screen.getByLabelText('Latitude'));
+    await user.type(screen.getByLabelText('Latitude'), '54.352');
+    await user.clear(screen.getByLabelText('Longitude'));
+    await user.type(screen.getByLabelText('Longitude'), '18.646');
+    await user.click(screen.getByRole('button', { name: 'Save position' }));
+
+    await waitFor(() => {
+      const updateCall = fetchMock.mock.calls.find(([url, init]) => String(url) === '/api/operations/flights/44' && init?.method === 'PUT');
+      expect(updateCall).toBeDefined();
+      expect(JSON.parse(String(updateCall?.[1]?.body))).toMatchObject({
+        expected_version: 3,
+        scope_type: 'CONTINENT',
+        scope_code: 'EU',
+        latitude: 54.352,
+        longitude: 18.646,
+      });
+    });
+    expect(await screen.findByText('Simulated flight position updated.')).toBeInTheDocument();
   });
 
   it('gates chat controls by permission and posts the selected share type', async () => {

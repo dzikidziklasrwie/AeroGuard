@@ -36,11 +36,10 @@
   an operations plan.
 - The dashboard keeps its access token only in memory. A page refresh signs the
   user out by design; there is no browser persistence or refresh-token flow.
-- A workflow file does not prove that a GitHub-hosted run has passed. Check the
-  hosted run before reporting CI status.
 - A local headless-Chrome check exercised the browser, nginx WebSocket upgrade,
-  and Docker network path together. This path is not yet an automated test or a
-  hosted-CI result.
+  and Docker network path together. Hosted CI checks the Docker health and
+  SignalR negotiation paths, but it does not run this complete browser
+  WebSocket check.
 
 ## Prioritized future work
 
