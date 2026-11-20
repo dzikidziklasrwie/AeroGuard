@@ -86,11 +86,11 @@ Observed locally on 2026-11-20:
 | React / TypeScript | `npm ci`, lint, typecheck, 37/37 Vitest tests in 9 files, and production build passed |
 | Dependency audit | 0 known npm vulnerabilities reported |
 | Current Docker/browser path | API and dashboard images built; Compose reported both services healthy; Chrome completed the nginx WebSocket handshake and received four SignalR frames |
-| Hosted portability | GitHub Actions passed MSVC, GCC, ASan/UBSan, clang-tidy, frontend, API, and Docker jobs on the map-containment feature branch |
+| Hosted portability | GitHub Actions passed MSVC, GCC, ASan/UBSan, clang-tidy, frontend, API, and Docker jobs on the merged `main` revision |
 
 GitHub Actions run
-[`44812965465`](https://github.com/dzikidziklasrwie/AeroGuard/actions/runs/44812965465)
-passed all seven jobs on feature commit `0488ea0`, including the map-boundary
+[`44814478366`](https://github.com/dzikidziklasrwie/AeroGuard/actions/runs/44814478366)
+passed all seven jobs on merge commit `fe2632a`, including the map-boundary
 regression tests and Node 24 workflow actions. The automated suites negotiate
 SignalR but don't connect a real WebSocket client end to end; the browser,
 nginx WebSocket, and Docker network path passed a separate local check. We
@@ -133,8 +133,8 @@ cmake -E make_directory demo-output
 ```
 
 On Windows, run the same preset commands in Developer PowerShell and invoke
-`.\build\debug\aeroguard.exe`. See the [build guide](docs/build-and-run.md) for
-prerequisites, frontend commands, install steps, sanitizers, and troubleshooting.
+`.\build\debug\aeroguard.exe`. See the [project guide](docs/PROJECT-GUIDE.md#build-and-run-from-source)
+for prerequisites, frontend commands, install steps, sanitizers, and troubleshooting.
 
 ## Supplied scenarios
 
@@ -181,30 +181,16 @@ frontend/            React, TypeScript, Vite, and Vitest dashboard
 backend/             ASP.NET Core Minimal API, SQLite schema, and xUnit tests
 deploy/              nginx configuration for the integrated Docker stack
 scenarios/           Seven fictional fault-injection definitions
-docs/                Architecture, requirements, tests, decisions, and learning notes
+docs/                One project guide plus portfolio images
 ```
 
 ## Documentation
 
-| Read this | For |
-|---|---|
-| [User manual](docs/user-manual.md) | Start the demo, operate the dashboard, interpret scenarios, export reports, and troubleshoot |
-| [Architecture](docs/architecture.md) | Component boundaries, runtime flow, pattern use, SOLID mapping, ownership, and data contract |
-| [Functional requirements](docs/requirements.md) | Testable `REQ-001` to `REQ-053` behaviour |
-| [State machine](docs/state-machine.md) | Complete valid and invalid transition rules |
-| [Telemetry and scenarios](docs/telemetry-and-scenarios.md) | Fictional fields, thresholds, fault injections, and schedules |
-| [Test strategy](docs/testing.md) | Test layers, risk cases, commands, and evidence policy |
-| [Traceability](docs/traceability.md) | Requirement-to-test mapping and observed status |
-| [Security and authorization](docs/security-and-authorization.md) | Map, chat, role, assignment, session, and deployment rules |
-| [Build and run](docs/build-and-run.md) | Windows, Linux, frontend, Docker, and install instructions |
-| [Design decisions](docs/design-decisions.md) | Reasons and trade-offs behind the architecture |
-| [Limitations and roadmap](docs/limitations-and-roadmap.md) | Claims the project doesn't make and next steps |
-| [Learning and interview guide](docs/learning-and-interview-guide.md) | Modern C++ concepts, phased verification, and interview prompts |
-| [CV and portfolio entry](docs/cv-and-portfolio-entry.md) | Ready-to-edit CV copy and 30/90-second project pitches |
-| [TASKS.md](TASKS.md) | Evidence-backed completion and verification snapshot |
-
-The banner's generation prompt and the dashboard capture provenance are in
-[docs/assets/README.md](docs/assets/README.md).
+[AeroGuard project guide](docs/PROJECT-GUIDE.md) is the single detailed
+document. It contains the user manual, build instructions, architecture,
+telemetry and state contracts, security rules, requirements, test evidence,
+design decisions, limitations, CV wording, interview notes, and image
+provenance. [TASKS.md](TASKS.md) retains the command-level completion record.
 
 ## License
 
