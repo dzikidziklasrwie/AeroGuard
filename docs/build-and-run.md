@@ -66,7 +66,7 @@ mkdir -p demo-output
 ./build/debug/aeroguard \
   --scenario simulated-overheating \
   --seed 42 \
-  --duration 20000 \
+  --duration 45000 \
   --tick 100 \
   --output demo-output/overheating.jsonl
 ```
@@ -78,7 +78,7 @@ New-Item -ItemType Directory -Force demo-output | Out-Null
 .\build\debug\aeroguard.exe `
   --scenario simulated-overheating `
   --seed 42 `
-  --duration 20000 `
+  --duration 45000 `
   --tick 100 `
   --output demo-output\overheating.jsonl
 ```
@@ -104,13 +104,23 @@ First generate or retain simulator data under `frontend/public/data`, then:
 ```bash
 cd frontend
 npm ci
+AEROGUARD_API_TARGET=http://localhost:5080 npm run dev
+```
+
+PowerShell uses a separate environment assignment:
+
+```powershell
+$env:AEROGUARD_API_TARGET = "http://localhost:5080"
 npm run dev
 ```
 
 Open the URL printed by Vite (normally `http://localhost:5173`). Vite proxies
-`/api` to `http://localhost:5080`. The UI tries the REST archive first and
-falls back to `/data/manifest.json` when the API is unavailable. Opening
-`index.html` directly from disk doesn't provide the required fetch behaviour.
+`/api` and the `/hubs/operations` WebSocket to the configured API target. The
+recorded dashboard tries the REST archive first and falls back to
+`/data/manifest.json` when the API is unavailable. The signed-in operations map
+uses a REST snapshot, SignalR updates, and five-second REST polling if the hub
+cannot connect. Opening `index.html` directly from disk doesn't provide the
+required fetch behaviour.
 
 Production and test commands:
 
@@ -133,14 +143,14 @@ Set an administrator password outside the repository and start the API:
 PowerShell:
 
 ```powershell
-$env:AEROGUARD_ADMIN_PASSWORD = "choose-a-long-local-password"
+$env:AEROGUARD_ADMIN_PASSWORD = "Choose-A-Long-Local-Password-42!"
 dotnet run --project backend/src/AeroGuard.Api --urls http://localhost:5080
 ```
 
 Bash:
 
 ```bash
-export AEROGUARD_ADMIN_PASSWORD='choose-a-long-local-password'
+export AEROGUARD_ADMIN_PASSWORD='Choose-A-Long-Local-Password-42!'
 dotnet run --project backend/src/AeroGuard.Api --urls http://localhost:5080
 ```
 
@@ -148,6 +158,15 @@ The first start creates the `admin` account. The plain password is not written
 to SQLite or Git. The API imports the seven packaged replays, exposes OpenAPI
 at `http://localhost:5080/openapi/v1.json`, and stores local data under its
 ignored `.data` directory.
+
+Direct API starts treat the password as a one-time bootstrap value. Set
+`AEROGUARD_SYNC_ADMIN_PASSWORD=true` if this runtime configuration should also
+update the existing configured administrator and revoke its older sessions.
+
+After sign-in, the dashboard opens the simulated operations map. Map placement,
+chat, and live simulated updates require the API; the public recorded replay
+remains available without an account. See the [user manual](user-manual.md) for
+the assignment and operation-permission rules.
 
 For the exact local-only `admin` / `admin` demonstration requested by some
 reviewers, weak bootstrap passwords require an explicit Development setting:
@@ -224,10 +243,26 @@ Copy-Item .env.example .env
 docker compose up --build
 ```
 
-Open `http://localhost:8080`. Direct API access is available at
-`http://localhost:8081`. SQLite uses the `aeroguard-data` named volume. Stop
-the stack with `Ctrl+C`, then `docker compose down`. Add `--volumes` only when
-you intentionally want to remove the local database.
+Open `http://localhost:8080`. Direct API access is bound to loopback at
+`http://127.0.0.1:8081`; it isn't exposed on every host interface. SQLite uses
+the `aeroguard-data` named volume. Stop the stack with `Ctrl+C`, then `docker
+compose down`. Add `--volumes` only when you intentionally want to remove the
+local database.
+
+The dashboard port is also bound to `127.0.0.1`. Compose runs the API in
+Development and permits an explicitly chosen short demonstration password.
+This makes a local `admin` / `admin` setting work without weakening direct
+Production starts. Keep this Compose profile on one workstation only.
+
+nginx proxies REST under `/api` and upgrades `/hubs/operations` for SignalR.
+It disables access logging on `/hubs/` because browser WebSocket transport can
+place the bearer token in the query string. Compose enables one-hop forwarded
+headers so the API receives the client address and scheme from its nginx
+proxy.
+
+Compose also enables administrator password synchronization. After changing
+the password in `.env`, recreate or restart the API container before using the
+new value. The replacement revokes active sessions for that administrator.
 
 Run the simulator image directly and persist fresh files to `demo-output`:
 
@@ -246,7 +281,9 @@ docker compose run --rm simulator \
 | `cl.exe` is not found | Use a Visual Studio Developer PowerShell, then reconfigure `build/debug`. |
 | `ninja` is not found | Install Ninja and ensure it is on `PATH`. |
 | Dashboard says the manifest is unavailable | Generate data into `frontend/public/data` and use the Vite server, not `file://`. |
-| Login says the username or password is incorrect | Set `AEROGUARD_ADMIN_PASSWORD` before the first API start. If the database already exists, use its current password or intentionally create a new local database. |
+| Login says the username or password is incorrect | Use a password that meets the 12-character and character-group rules. In Compose, change `.env`, then run `docker compose up --detach --force-recreate api`; startup synchronization updates the existing configured administrator. |
 | Vite shows static replay data instead of the REST archive | Start the API on port 5080 and confirm `GET /api/health` succeeds through the Vite proxy. |
+| Vite map stays on `REST snapshot` | Set `AEROGUARD_API_TARGET` to the API URL before `npm run dev`; confirm the `/hubs` proxy has WebSocket support. The map polls REST every five seconds while the hub is unavailable. |
+| Map shows `Session demo` | Restore the operations API. Session-demo flights and messages exist only in browser memory. |
 | Dashboard rejects a replay | Confirm schema version 1 and inspect the dashboard's line-specific parse warnings. |
 | Sanitizer preset is unavailable on Windows | This is intentional; run it with GCC/Clang on Linux or WSL. |
