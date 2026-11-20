@@ -217,6 +217,7 @@ dotnet format backend/AeroGuard.Backend.sln --verify-no-changes --no-restore
 The integration suite uses a new temporary SQLite database, imports all seven
 replays, bootstraps a test administrator, and exercises public and protected
 routes through the in-process HTTP server. The current local snapshot passes
-48/48 xUnit tests, including administrator password synchronization, flight motion, map authorization, country and
-polar route bounds, active-flight status, chat bounds, permission overrides,
-hub token scope, and revoked-session recipient checks.
+53/53 xUnit test cases, including administrator password synchronization,
+bounded flight motion, map authorization, country and polar route validation,
+active-flight status, chat bounds, permission overrides, hub token scope, and
+revoked-session recipient checks.

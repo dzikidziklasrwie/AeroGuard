@@ -45,6 +45,39 @@ public sealed class FlightMotionTests
         Assert.Equal(85.0, initial.Latitude, 4);
     }
 
+    [Theory]
+    [InlineData("WORLD", 85.0, 180.0)]
+    [InlineData("WORLD", -85.0, -180.0)]
+    [InlineData("CONTINENT", 84.9999, 179.9999)]
+    [InlineData("CONTINENT", -84.9999, -179.9999)]
+    [InlineData("COUNTRY", 0.0, 180.0)]
+    public void RouteStaysWithinPublishedCoordinateBounds(
+        string scopeType,
+        double centerLatitude,
+        double centerLongitude)
+    {
+        var flight = Flight(durationMs: 45_000) with
+        {
+            ScopeType = scopeType,
+            CenterLatitude = centerLatitude,
+            CenterLongitude = centerLongitude,
+        };
+
+        for (var elapsedSeconds = 0; elapsedSeconds <= 43_200; elapsedSeconds += 17)
+        {
+            var position = FlightMotion.Calculate(
+                flight,
+                StartedAt.AddSeconds(elapsedSeconds));
+
+            Assert.True(double.IsFinite(position.Latitude));
+            Assert.True(double.IsFinite(position.Longitude));
+            Assert.True(double.IsFinite(position.HeadingDeg));
+            Assert.InRange(position.Latitude, -85.0, 85.0);
+            Assert.InRange(position.Longitude, -180.0, 180.0);
+            Assert.InRange(position.HeadingDeg, 0.0, 360.0);
+        }
+    }
+
     [Fact]
     public void ConditionRequiresSixSubsystemsAndMapsFaultToCritical()
     {
