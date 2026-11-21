@@ -84,9 +84,15 @@ and falls back to the seven packaged JSONL files when the API is unavailable.
 The selected run starts at virtual time zero, advances automatically, and
 returns to the beginning at its recorded end time.
 
-`Scenario file` selects the newest run for one scenario. `Recorded runs`
+`Public replay scenario` selects the newest run for one scenario. `Recorded runs`
 selects an exact archived or bundled artifact. Changing either selection
-resets the replay without changing the source file.
+resets the replay without changing the source file or the signed-in Operations
+Workspace session.
+
+These public controls don't assign a scenario to a mapped aircraft. To do
+that, sign in, select the aircraft marker or flight-board row, choose a run in
+`Change scenario for <tail number>`, and select `Apply scenario`. The tail
+number in the label confirms the target before the change is submitted.
 
 The dashboard shows:
 
@@ -161,18 +167,41 @@ Russia with `SA` enters `TRANSIT`, follows a great-circle path for no more than
 30 seconds, then changes to `PATROL` inside the South America profile. The
 detail rail shows the current phase and transit progress. The seven continent
 profiles use conservative interior routes, so a Europe patrol doesn't enter
-Africa. A country route currently stays in a small bounded patrol around the
-selected start point; the country code doesn't supply a border polygon.
+Africa. The country catalog provides bounded presentation routes for supported
+codes and uses a local fallback for another valid ISO code. These profiles
+don't claim political-border containment.
 
 An administrator can place, reconfigure, or remove any eligible flight. A
-non-administrator needs an `OWNER` aircraft assignment and the matching
-operation permission. Each aircraft can have one active flight. Reconfiguration
-uses the current flight version, so stale writes return HTTP 409. Remove a
-flight before changing its aircraft from `ACTIVE` or deleting that aircraft.
+non-administrator needs an `OWNER` or `MAINTAINER` aircraft assignment and the
+matching operation permission. Only administrators can assign an existing
+aircraft to another account. Each aircraft can have one active flight.
+Reconfiguration uses the current flight version, so stale writes return HTTP
+409. Remove a flight before changing its aircraft from `ACTIVE` or deleting
+that aircraft.
 
 Synthetic map motion and scenario playback use separate clocks. The map moves
 fast enough to inspect during a short demonstration. Stored C++ telemetry
-advances at wall-clock speed and loops after its 40 to 55 second run.
+advances at wall-clock speed and loops after its 40 to 105 second run.
+
+Each marker shows a ground-position shadow linked to an aircraft silhouette,
+an always-visible tail number, and a short contrail. The selected-aircraft card
+repeats the tail number, display name, assigned scenario, and current map
+effect. The run chosen while placing or reconfiguring a flight affects only
+that aircraft.
+
+For an active flight, the `Change scenario for <tail number>` control changes
+only its recorded run and restarts that scenario. The API preserves the
+current position, destination, patrol scope, and speed. Optimistic concurrency
+rejects a stale selection instead of overwriting another user's change.
+
+Communication, invalid-sensor, power, multiple-failure, and recovery replays
+use distinct signal, warning, electrical, smoke, and recovery animations. The
+105-second overheating replay shows heat from 10 to 60 seconds, fire from 60
+to 80 seconds, airframe breakup, descending debris, and impact. Motion holds
+at the breakup point for the rest of that replay cycle. Land shows an impact
+burst and wreckage. Water shows a splash and floating debris without a second
+explosion. These deterministic visuals are fictional presentation states, not
+a physics or accident model.
 
 Use `+` and `-` or the mouse wheel to zoom from 1x to 6x. Drag to pan, select
 `Reset` for the full world, or select `Focus selected` to center the active
@@ -609,7 +638,7 @@ Fault rules take precedence over degraded rules.
 | `normal-operation` | 40 s | None |
 | `communication-interruption` | 45 s | Communications missing from 10-22 s |
 | `invalid-sensor-data` | 45 s | Invalid temperature input from 10-20 s |
-| `simulated-overheating` | 45 s | Temperature overheat from 10-25 s |
+| `simulated-overheating` | 105 s | Sustained temperature overheat from 10-105 s |
 | `power-fluctuations` | 45 s | Power fluctuation from 10-26 s |
 | `multiple-subsystem-failures` | 55 s | Overlapping communications, cooling, computer, and equipment faults |
 | `recovery-after-temporary-failure` | 45 s | Communications missing from 10-18 s |
@@ -672,8 +701,8 @@ status.
 | Reconfigure flight | Any active flight | Denied | `FLIGHT_RECONFIGURE_OWN` required | `FLIGHT_RECONFIGURE_OWN` required |
 | Remove flight | Any active flight | Denied | `FLIGHT_REMOVE_OWN` required | `FLIGHT_REMOVE_OWN` required |
 | Send text or location | Allowed | `CHAT_SEND` required | `CHAT_SEND` required | `CHAT_SEND` required |
-| Send telemetry | Allowed | Denied | `CHAT_SEND` and `TELEMETRY_SHARE` required |
-| Replace account operation permissions | Allowed | Denied | Denied |
+| Send telemetry | Allowed | Denied | Denied | `CHAT_SEND` and `TELEMETRY_SHARE` required |
+| Replace account operation permissions | Allowed | Denied | Denied | Denied |
 
 Unassigned users receive not-found responses for another account's flight and
 messages. This avoids confirming that the identifier exists.
@@ -707,7 +736,7 @@ capacity tests.
 
 ## Requirements and verification
 
-The 55 requirement identifiers remain stable even though their former
+The 58 requirement identifiers remain stable even though their former
 standalone files were merged here. `Shall` marks required behaviour.
 
 ### Simulation and health
@@ -777,16 +806,16 @@ standalone files were merged here. `Shall` marks required behaviour.
 | REQ-046 | Account operation overrides shall replace role defaults and create audit evidence. |
 | REQ-047 | One active flight per aircraft shall enforce status, run, coordinate, speed, scope, and version rules. |
 | REQ-048 | Synthetic motion shall stay separate from scenario playback; API and browser shall not recalculate C++ health. |
-| REQ-049 | REST snapshot plus sequenced SignalR updates shall recover after reconnect and respect later access revocation. |
+| REQ-049 | REST snapshot plus sequenced SignalR updates shall recover after reconnect, respect later access revocation, and reject delayed state older than an edit or removal. |
 | REQ-050 | Chat shall enforce assignment and share permissions, server-owned payloads, length, retention, and rate limits. |
-| REQ-051 | Packaged scenarios shall last 40-55 seconds and agree across manifest, importer, and parser. |
-| REQ-052 | API failure may enter a labelled memory-only demo; authentication failure shall sign out. |
+| REQ-051 | Packaged scenarios shall last 40-105 seconds and agree across manifest, importer, and parser. |
+| REQ-052 | API failure may enter a labelled memory-only demo; scenario selection shall preserve an authenticated workspace, while authentication failure shall sign out. |
 | REQ-053 | Route coordinates shall remain finite and bounded; React shall retain the last valid position for a bad update and keep markers inside the projected world. |
 | REQ-054 | A continent code shall select a destination profile. A flight shall transit from any valid start in at most 30 seconds, report phase and progress, then remain within that profile. |
 | REQ-055 | The map shall support bounded 1x-6x zoom, pan, reset, focus, and zoom-aware placement without treating a drag as a placement click. |
-| REQ-056 | Every simulated flight shall keep an always-visible tail-number marker and a stable aircraft/contrail presentation tied to that flight. |
-| REQ-057 | Scenario timelines shall drive fictional map effects for communication loss, sensor rejection, power fluctuation, compounded faults, recovery and overheating. |
-| REQ-058 | Long overheating shall enter a bounded fire phase, followed by a surface-impact effect on land or splash/debris without a ground explosion over water. |
+| REQ-056 | Every simulated flight shall keep an always-visible tail number, linked map shadow, aircraft silhouette, and selected-aircraft identity tied to that flight. |
+| REQ-057 | An authorized user shall assign a run directly to one selected flight without changing its destination; that run shall drive only that aircraft's fictional map effects. |
+| REQ-058 | Sustained overheating shall show heat until 60 seconds, fire for 20 seconds, breakup, descending debris, and a land impact or water splash without a second explosion over water. |
 
 ### Verification snapshot
 
@@ -795,8 +824,8 @@ Observed locally on 2026-11-21:
 | Check | Result |
 |---|---|
 | Native | 45/45 CTest checks passed |
-| API | 63/63 xUnit test cases passed; Release build and format verification passed |
-| Frontend | 42/42 Vitest tests in 10 files, lint, typecheck, and production build passed |
+| API | 67/67 xUnit test cases passed; Release build and format verification passed |
+| Frontend | 47/47 Vitest tests in 10 files, lint, typecheck, and production build passed |
 | Dependency audit | 0 npm vulnerabilities reported |
 | Docker/browser | Both containers healthy; authenticated map, nginx WebSocket handshake, and four SignalR frames checked locally |
 | Hosted CI | MSVC, GCC, ASan/UBSan, clang-tidy, frontend, API, and Docker jobs passed |
@@ -840,7 +869,11 @@ Route tests sample every one of the seven continent profiles through 24 hours
 of simulated wall time. A separate 50-year elapsed-time case checks that route
 coordinates and heading remain finite. Frontend component tests cover
 last-valid-position retention, pointer-centered zoom, pan, reset, selected-
-aircraft focus, zoom-aware placement, and drag suppression.
+aircraft focus, zoom-aware placement, drag suppression, scenario-to-aircraft
+effects, and the complete overheating sequence. API motion tests cover a
+continuous transit-to-patrol handoff and the overheating hold across a replay
+boundary. An application test signs in, changes the top scenario selector, and
+confirms that the workspace session remains mounted.
 
 CI evidence rules:
 
@@ -867,12 +900,14 @@ CI evidence rules:
 | DD-011 | Revocable opaque sessions | Immediate revocation and no reusable token in the database; every request checks storage |
 | DD-012 | Endpoint, service, repository separation | HTTP, policy, and SQL change independently; more mappings in a small application |
 | DD-013 | Optimistic aircraft versions | Prevents silent overwrites; clients must handle HTTP 409 |
-| DD-014 | Stored telemetry with separate map clock | Readable 40-55 second scenarios and visible motion; marker path is presentation data |
+| DD-014 | Stored telemetry with separate map clock | Readable 40-105 second scenarios and visible motion; marker path is presentation data |
 | DD-015 | REST snapshot plus SignalR changes | Complete initial state and reconnect repair; multi-instance use needs shared coordination |
 | DD-016 | Assignment plus account overrides | Restricts one account without changing ownership; overrides replace the whole default set |
 | DD-017 | Coordinate validation plus SVG clipping | Protects both the data contract and rendered geometry; antimeridian paths reappear at the opposite edge |
 | DD-018 | Destination-driven transit and patrol | Coordinates remain the start while a continent code selects a destination; great-circle transit is capped at 30 seconds and conservative patrol profiles are approximations, not political borders |
 | DD-019 | Work only for visible records and connected recipients | Idle broadcasts stop before database reads, prepared flight data is reused, replay state is derived in one pass, and the map loads on demand; per-user authorization and the process-local registry still target a small single-instance deployment |
+| DD-020 | Scenario-driven presentation state | One pure timeline maps a flight's stored scenario time to deterministic visuals; Natural Earth land detection remains coarse and the effects aren't a physics model |
+| DD-021 | Sequence reservation before asynchronous broadcast work | A delayed periodic snapshot keeps its older sequence and can't outrank a newer edit or removal; the sequence remains process-local |
 
 ## Limitations and roadmap
 
@@ -895,11 +930,14 @@ CI evidence rules:
   capacity tests.
 - Hosted CI checks Docker health and SignalR negotiation but doesn't run the
   complete browser WebSocket path.
-- Continent patrols use seven conservative elliptical profiles rather than
-  political border polygons. `COUNTRY` is a local bounded patrol around the
-  selected start and doesn't resolve or enforce a country's boundary.
+- Continent routes use conservative polygons or fallback profiles. Country
+  routes use a bounded catalog plus a local fallback. Neither claims complete
+  coastline, airspace, or political-border containment.
 - Great-circle transit and its 30-second cap are presentation behaviour, not a
   flight plan, navigation model, or statement about real aircraft performance.
+- Scenario effects use recorded time and coarse Natural Earth land detection.
+  Fire, breakup, debris, splash, and impact graphics are not an accident,
+  structural, ballistics, or fluid simulation.
 - The broadcaster and replay work reductions have automated behaviour tests,
   but the project has no published fleet-scale or browser-frame benchmark.
 
@@ -947,11 +985,12 @@ Evidence-backed bullet options:
   operation permissions, active flights, chat, optimistic updates, and audit.
 - Connected stored C++ telemetry to React through REST and a packaged fallback,
   then added authorized SignalR updates, great-circle transit, bounded patrol
-  profiles, and a multi-stage Docker stack.
+  profiles, selected-aircraft identity, scenario-linked map effects, and a
+  multi-stage Docker stack.
 - Reduced repeated work with idle broadcast exits, one prepared snapshot per
   flight, single-pass replay derivation, and an on-demand map module.
-- Verified the current worktree locally with 45 native checks, 63 API test
-  cases, and 42 frontend tests. The preceding `main` revision passed
+- Verified the current worktree locally with 45 native checks, 67 API test
+  cases, and 47 frontend tests. The preceding `main` revision passed
   cross-platform CI, sanitizers, static analysis, and Docker.
 
 ### Architecture explanation

@@ -140,6 +140,7 @@ active bearer session.
 | `GET /api/operations/flights` | Admin or assigned account | List visible active simulated flights |
 | `POST /api/operations/flights` | Admin, or `OWNER` with `FLIGHT_PLACE_OWN` | Place an `ACTIVE` aircraft on the map |
 | `PUT /api/operations/flights/{id}` | Admin, or `OWNER` with `FLIGHT_RECONFIGURE_OWN` | Change route or archived run with `expected_version` |
+| `PUT /api/operations/flights/{id}/scenario` | Admin, or `OWNER` with `FLIGHT_RECONFIGURE_OWN` | Change only the selected flight's archived run while preserving its destination |
 | `DELETE /api/operations/flights/{id}` | Admin, or `OWNER` with `FLIGHT_REMOVE_OWN` | Remove the flight and its chat rows |
 | `GET /api/operations/flights/{id}/messages` | Admin or assigned account | Read 1 to 200 recent chat rows |
 | `POST /api/operations/flights/{id}/messages` | Admin, or assigned account with `CHAT_SEND` | Send text or current location; telemetry also needs `OWNER` and `TELEMETRY_SHARE` |
@@ -169,7 +170,7 @@ then report `PATROL` and remain inside the selected conservative route profile.
 The API keeps output within latitude -82 to 82 and longitude -176 to 176, even
 for antimeridian routes and long elapsed times. Motion uses an accelerated
 display clock. Archived scenario telemetry advances at wall-clock speed and
-loops after its 40 to 55 second recorded duration.
+loops after its 40 to 105 second recorded duration.
 
 SignalR accepts `access_token` in the query only under `/hubs/operations`, as
 required by browser WebSocket transport. nginx disables access logging for the
@@ -215,6 +216,8 @@ and insertion run in one SQL statement so a concurrent revocation cannot leave
 an unauthorized row.
 
 The broadcaster logs a failed flight update and continues with other flights.
+It reserves each update sequence before asynchronous database and telemetry
+work, so a delayed periodic snapshot cannot outrank a newer edit or removal.
 Its connection registry is process memory and it builds snapshots per
 recipient, which suits a small single-instance demonstration rather than a
 distributed or high-volume fleet.
@@ -231,8 +234,9 @@ dotnet format backend/AeroGuard.Backend.sln --verify-no-changes --no-restore
 The integration suite uses a new temporary SQLite database, imports all seven
 replays, bootstraps a test administrator, and exercises public and protected
 routes through the in-process HTTP server. The current local snapshot passes
-63/63 xUnit test cases, including administrator password synchronization,
+67/67 xUnit test cases, including administrator password synchronization,
 map authorization, continent destination transit, country and polar route
 validation, all seven continent patrol profiles sampled across 24 hours, a
-50-year finite-route case, active-flight status, chat bounds, permission
+50-year finite-route case, continuous transit-to-patrol handoff, the
+overheating destruction hold, active-flight status, chat bounds, permission
 overrides, hub token scope, and revoked-session recipient checks.
