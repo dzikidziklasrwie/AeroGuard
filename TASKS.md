@@ -15,7 +15,7 @@ Snapshot date: 2026-11-21
 | JSONL/manifest producer-consumer contract | C++ export, seven authentic replays, parser, and manifest | All seven generated files loaded without parser warnings |
 | ASP.NET Core API, SQLite, accounts, fleet, and simulated operations | Minimal API, archive importer, bearer sessions, administrator-controlled assignments, destination routing, operation permissions, active flights, chat, session-aware SignalR delivery, and audit records | Current xUnit suite passed 67/67 |
 | Documentation and CV material | User manual, requirements, design, build, tests, trade-offs, interview notes, and measured CV copy | Cross-checked against the current code and results |
-| Windows/Linux GitHub Actions | Workflow defines MSVC, GCC, sanitizers, clang-tidy, frontend, backend, and Docker jobs with Node 24 action runtimes and explicit timeouts | Run `44814478366` passed all seven jobs on the preceding `main` revision; current branch run pending |
+| Windows/Linux GitHub Actions | Workflow defines MSVC, GCC, sanitizers, clang-tidy, frontend, backend, and Docker jobs with Node 24 action runtimes and explicit timeouts | Run `44854113152` passed all seven jobs on implementation commit `47d38c5` |
 | Multi-stage Docker demo | Simulator data generation, .NET API, React build, nginx, SignalR proxy, and SQLite volume | Previous integrated images became healthy; Chrome completed one nginx WebSocket handshake and received four SignalR frames |
 | Portfolio visuals | Generated hero plus real dashboard and operations-map captures with provenance | Production dashboard captured at 1600 x 1200; authenticated map workspace captured at 1446 x 904 |
 
@@ -103,8 +103,8 @@ Snapshot date: 2026-11-21
 - [x] Frontend, backend, sanitizer, analysis, and Docker GitHub Actions jobs
   observed passing.
 - [x] Run the preceding map-containment revision in hosted CI.
-- [ ] Run the current destination-routing, viewport, and performance revision
-  in hosted CI.
+- [x] Run the current destination-routing, viewport, scenario, and performance
+  revision in hosted CI.
 - [x] Verify a real browser SignalR client, nginx WebSocket upgrade, and Docker
   network path as one stack.
 - [ ] Fresh-clone README walkthrough of the published revision.
@@ -121,7 +121,7 @@ Snapshot date: 2026-11-21
 | Frontend | Node 24.13.1 and npm 11.8.0; the locked install, ESLint, TypeScript, 47/47 Vitest tests in 10 files, and Vite production build passed. `npm audit` reported 0 vulnerabilities. |
 | Backend | The current .NET suite passed 67/67 xUnit test cases, including 24-hour continent patrol samples, a 50-year finite-route case, route-transition continuity, and overheating motion hold. |
 | Previous Docker/browser | API and dashboard images from the preceding revision reported healthy. An authenticated headless Chrome session rendered three flight markers, completed one `/hubs/operations` WebSocket handshake through nginx, and received four WebSocket frames. |
-| Previous GitHub Actions | [Run `44814478366`](https://github.com/dzikidziklasrwie/AeroGuard/actions/runs/44814478366) completed successfully with MSVC, GCC, ASan/UBSan, clang-tidy, frontend, API, and Docker jobs on commit `fe2632a`. The current branch has no hosted result yet. |
+| Current GitHub Actions | [Run `44854113152`](https://github.com/dzikidziklasrwie/AeroGuard/actions/runs/44854113152) completed successfully with MSVC, GCC, ASan/UBSan, clang-tidy, frontend, API, and Docker jobs on implementation commit `47d38c5`. |
 | Visual review | Headless Chrome captured the production dashboard at 1600 x 1200 and the authenticated operations-map workspace at 1446 x 904 after API data loaded. |
 
 We don't claim a coverage percentage.

@@ -830,9 +830,10 @@ Observed locally on 2026-11-21:
 | Docker/browser | Both containers healthy; authenticated map, nginx WebSocket handshake, and four SignalR frames checked locally |
 | Hosted CI | MSVC, GCC, ASan/UBSan, clang-tidy, frontend, API, and Docker jobs passed |
 
-[GitHub Actions run 44814478366](https://github.com/dzikidziklasrwie/AeroGuard/actions/runs/44814478366)
-passed on the preceding `main` revision. The continent-routing and zoom changes
-above have local evidence until their branch workflow completes. The exact
+[GitHub Actions run 44854113152](https://github.com/dzikidziklasrwie/AeroGuard/actions/runs/44854113152)
+passed on implementation commit `47d38c5`. It includes the continent-routing,
+zoom, per-aircraft scenario, API, frontend, sanitizer, analysis, and Docker
+checks described above. The exact
 commands and tool versions remain in [TASKS.md](../TASKS.md).
 
 Most requirements have direct automated evidence. The current gaps are stated
@@ -989,9 +990,9 @@ Evidence-backed bullet options:
   multi-stage Docker stack.
 - Reduced repeated work with idle broadcast exits, one prepared snapshot per
   flight, single-pass replay derivation, and an on-demand map module.
-- Verified the current worktree locally with 45 native checks, 67 API test
-  cases, and 47 frontend tests. The preceding `main` revision passed
-  cross-platform CI, sanitizers, static analysis, and Docker.
+- Verified the implementation revision locally with 45 native checks, 67 API
+  test cases, and 47 frontend tests. The same revision passed cross-platform
+  CI, sanitizers, static analysis, and Docker.
 
 ### Architecture explanation
 
