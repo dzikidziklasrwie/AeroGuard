@@ -155,6 +155,15 @@ scope, speed from 400 to 1100 km/h, and a start point. Latitude must be from
 | `CONTINENT` | `AF`, `AN`, `AS`, `EU`, `NA`, `OC`, or `SA` |
 | `COUNTRY` | ISO 3166-1 alpha-3, such as `POL`, `DNK`, or `USA` |
 
+Coordinates set the aircraft's start position. A continent code sets its
+destination. The start may be outside that continent: a flight placed in
+Russia with `SA` enters `TRANSIT`, follows a great-circle path for no more than
+30 seconds, then changes to `PATROL` inside the South America profile. The
+detail rail shows the current phase and transit progress. The seven continent
+profiles use conservative interior routes, so a Europe patrol doesn't enter
+Africa. A country route currently stays in a small bounded patrol around the
+selected start point; the country code doesn't supply a border polygon.
+
 An administrator can place, reconfigure, or remove any eligible flight. A
 non-administrator needs an `OWNER` aircraft assignment and the matching
 operation permission. Each aircraft can have one active flight. Reconfiguration
@@ -164,6 +173,17 @@ flight before changing its aircraft from `ACTIVE` or deleting that aircraft.
 Synthetic map motion and scenario playback use separate clocks. The map moves
 fast enough to inspect during a short demonstration. Stored C++ telemetry
 advances at wall-clock speed and loops after its 40 to 55 second run.
+
+Use `+` and `-` or the mouse wheel to zoom from 1x to 6x. Drag to pan, select
+`Reset` for the full world, or select `Focus selected` to center the active
+aircraft. Placement clicks use the current zoom and pan position. A completed
+drag doesn't place or move an aircraft.
+
+The API keeps rendered output inside latitude -82 to 82 and longitude -176 to
+176, including long-running and antimeridian routes. React applies the same
+input validation and an edge-safe display projection. If one REST or SignalR
+update contains a bad coordinate, the browser keeps the aircraft's last valid
+position instead of removing its marker.
 
 `SignalR connected` means the browser receives authorized changes from the
 API. After reconnection it reloads the REST snapshot. If SignalR is unavailable,
@@ -512,10 +532,27 @@ An authenticated browser loads an authorized REST snapshot, then connects to
 `message_posted` events. A reconnect reloads the snapshot. Per-flight sequence
 numbers stop a delayed event from restoring removed state.
 
+The placement coordinates are the route start. A `CONTINENT` code selects one
+of seven destination profiles. `FlightMotion` follows a great-circle transit
+for at most 30 seconds, reports `TRANSIT` progress, and then switches to a
+bounded `PATROL` inside that profile. `COUNTRY` keeps a small patrol around the
+start point; its ISO code is metadata and doesn't imply polygon containment.
+All calculated display positions are inset to latitude -82 to 82 and longitude
+-176 to 176.
+
 SQLite stores one active flight per aircraft, per-account operation overrides,
 and flight messages. The broadcaster checks each session and current access
 before delivery. A failure while preparing one flight doesn't stop the rest of
 the broadcast cycle.
+
+The one-second broadcaster returns before database access when no SignalR
+connection exists. With connected recipients, it loads administrator IDs once
+per cycle, checks each session once per recipient lookup, prepares motion and
+telemetry once per flight, and reuses that prepared data across authorized
+snapshots. The replay dashboard finds the visible record prefix with a binary
+search and derives telemetry, transitions, timeline entries, latest values,
+and subsystem histories in one pass. The operations map is loaded only after
+the authenticated workspace needs it.
 
 The Docker image builds the simulator, replay data, API, and React bundle in
 separate stages. nginx serves React, proxies `/api`, and upgrades
@@ -665,7 +702,7 @@ capacity tests.
 
 ## Requirements and verification
 
-The 53 requirement identifiers remain stable even though their former
+The 55 requirement identifiers remain stable even though their former
 standalone files were merged here. `Shall` marks required behaviour.
 
 ### Simulation and health
@@ -739,23 +776,26 @@ standalone files were merged here. `Shall` marks required behaviour.
 | REQ-050 | Chat shall enforce assignment and share permissions, server-owned payloads, length, retention, and rate limits. |
 | REQ-051 | Packaged scenarios shall last 40-55 seconds and agree across manifest, importer, and parser. |
 | REQ-052 | API failure may enter a labelled memory-only demo; authentication failure shall sign out. |
-| REQ-053 | Route coordinates shall remain finite and bounded; React shall reject bad coordinates and clip projected markers. |
+| REQ-053 | Route coordinates shall remain finite and bounded; React shall retain the last valid position for a bad update and keep markers inside the projected world. |
+| REQ-054 | A continent code shall select a destination profile. A flight shall transit from any valid start in at most 30 seconds, report phase and progress, then remain within that profile. |
+| REQ-055 | The map shall support bounded 1x-6x zoom, pan, reset, focus, and zoom-aware placement without treating a drag as a placement click. |
 
 ### Verification snapshot
 
-Observed on 2026-11-20:
+Observed locally on 2026-11-21:
 
 | Check | Result |
 |---|---|
 | Native | 45/45 CTest checks passed |
-| API | 53/53 xUnit test cases passed |
-| Frontend | 37/37 Vitest tests in 9 files, lint, typecheck, and production build passed |
+| API | 63/63 xUnit test cases passed; Release build and format verification passed |
+| Frontend | 42/42 Vitest tests in 10 files, lint, typecheck, and production build passed |
 | Dependency audit | 0 npm vulnerabilities reported |
 | Docker/browser | Both containers healthy; authenticated map, nginx WebSocket handshake, and four SignalR frames checked locally |
 | Hosted CI | MSVC, GCC, ASan/UBSan, clang-tidy, frontend, API, and Docker jobs passed |
 
 [GitHub Actions run 44814478366](https://github.com/dzikidziklasrwie/AeroGuard/actions/runs/44814478366)
-passed on the merge commit for the map-containment work. The exact local
+passed on the preceding `main` revision. The continent-routing and zoom changes
+above have local evidence until their branch workflow completes. The exact
 commands and tool versions remain in [TASKS.md](../TASKS.md).
 
 Most requirements have direct automated evidence. The current gaps are stated
@@ -788,6 +828,12 @@ owner/permission combinations, optimistic conflicts, chat authorization, and
 revoked sessions. Tests use temporary databases and generated credentials,
 never a production database or checked-in password.
 
+Route tests sample every one of the seven continent profiles through 24 hours
+of simulated wall time. A separate 50-year elapsed-time case checks that route
+coordinates and heading remain finite. Frontend component tests cover
+last-valid-position retention, pointer-centered zoom, pan, reset, selected-
+aircraft focus, zoom-aware placement, and drag suppression.
+
 CI evidence rules:
 
 1. Don't call a configured workflow passing until its run completes.
@@ -817,6 +863,8 @@ CI evidence rules:
 | DD-015 | REST snapshot plus SignalR changes | Complete initial state and reconnect repair; multi-instance use needs shared coordination |
 | DD-016 | Assignment plus account overrides | Restricts one account without changing ownership; overrides replace the whole default set |
 | DD-017 | Coordinate validation plus SVG clipping | Protects both the data contract and rendered geometry; antimeridian paths reappear at the opposite edge |
+| DD-018 | Destination-driven transit and patrol | Coordinates remain the start while a continent code selects a destination; great-circle transit is capped at 30 seconds and conservative patrol profiles are approximations, not political borders |
+| DD-019 | Work only for visible records and connected recipients | Idle broadcasts stop before database reads, prepared flight data is reused, replay state is derived in one pass, and the map loads on demand; per-user authorization and the process-local registry still target a small single-instance deployment |
 
 ## Limitations and roadmap
 
@@ -839,6 +887,13 @@ CI evidence rules:
   capacity tests.
 - Hosted CI checks Docker health and SignalR negotiation but doesn't run the
   complete browser WebSocket path.
+- Continent patrols use seven conservative elliptical profiles rather than
+  political border polygons. `COUNTRY` is a local bounded patrol around the
+  selected start and doesn't resolve or enforce a country's boundary.
+- Great-circle transit and its 30-second cap are presentation behaviour, not a
+  flight plan, navigation model, or statement about real aircraft performance.
+- The broadcaster and replay work reductions have automated behaviour tests,
+  but the project has no published fleet-scale or browser-frame benchmark.
 
 ### Prioritized work
 
@@ -846,12 +901,15 @@ CI evidence rules:
 2. Measure native coverage with documented exclusions.
 3. Add property-based telemetry and transition tests plus parser fuzzing.
 4. Connect a running C++ producer through a back-pressured local transport.
-5. Benchmark allocation counts and tick distributions on a named machine.
-6. Exercise ARM cross-compilation and a constrained post-initialization profile.
-7. Sign releases and publish an SBOM.
-8. Add database migrations, backup tests, and a PostgreSQL deployment profile.
-9. Add OpenID Connect, MFA, and short-lived refresh-token rotation for hosted use.
-10. Complete keyboard, contrast, screen-reader, and reduced-motion audits.
+5. Replace approximate route profiles with versioned geographic geometry when
+   political boundary containment becomes a requirement.
+6. Benchmark broadcaster query counts, replay processing, browser frame time,
+   allocation counts, and native tick distributions on named workloads.
+7. Exercise ARM cross-compilation and a constrained post-initialization profile.
+8. Sign releases and publish an SBOM.
+9. Add database migrations, backup tests, and a PostgreSQL deployment profile.
+10. Add OpenID Connect, MFA, and short-lived refresh-token rotation for hosted use.
+11. Complete keyboard, contrast, screen-reader, and reduced-motion audits.
 
 A safety-related product would also need a system safety process, independent
 requirements baselines and review, configuration control, target hardware
@@ -867,7 +925,8 @@ React, TypeScript<br>
 Built a seeded virtual-time simulator for six fictional aircraft subsystems,
 with typed telemetry, bounded queues, heartbeat and fault handling, versioned
 JSONL diagnostics, a REST archive, role-based fleet management, and a React
-world-map dashboard with assigned flights, chat, and SignalR updates.
+world-map dashboard with assigned flights, destination routes, flight chat,
+viewport controls, and SignalR updates.
 [GitHub](https://github.com/dzikidziklasrwie/AeroGuard)
 
 Evidence-backed bullet options:
@@ -879,9 +938,13 @@ Evidence-backed bullet options:
   history through REST, and manages revocable sessions, roles, assignments,
   operation permissions, active flights, chat, optimistic updates, and audit.
 - Connected stored C++ telemetry to React through REST and a packaged fallback,
-  then added authorized SignalR updates and a multi-stage Docker stack.
-- Verified the published revision with 45 native checks, 53 API test cases, 37
-  frontend tests, cross-platform CI, sanitizers, static analysis, and Docker.
+  then added authorized SignalR updates, great-circle transit, bounded patrol
+  profiles, and a multi-stage Docker stack.
+- Reduced repeated work with idle broadcast exits, one prepared snapshot per
+  flight, single-pass replay derivation, and an on-demand map module.
+- Verified the current worktree locally with 45 native checks, 63 API test
+  cases, and 42 frontend tests. The preceding `main` revision passed
+  cross-platform CI, sanitizers, static analysis, and Docker.
 
 ### Architecture explanation
 
@@ -889,10 +952,11 @@ Evidence-backed bullet options:
 > seeded virtual-time engine creates typed telemetry, validates it, tracks
 > heartbeats, and applies an explicit five-state policy. It writes versioned
 > JSON Lines that a .NET API archives in SQLite. React replays those records and
-> displays assigned synthetic flights; neither layer recomputes the C++ health
-> decision. The project uses a fixed-capacity queue, injected clock and hardware
-> contracts, transition-matrix tests, cross-platform CMake, CI, sanitizers, and
-> Docker. It makes no hard real-time or certification claim.
+> displays assigned synthetic flights moving from a selected start to a bounded
+> destination patrol; neither layer recomputes the C++ health decision. The
+> project uses a fixed-capacity queue, injected clock and hardware contracts,
+> transition-matrix tests, cross-platform CMake, CI, sanitizers, and Docker. It
+> makes no hard real-time or certification claim.
 
 ### Modern C++ points
 

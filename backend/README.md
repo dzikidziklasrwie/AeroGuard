@@ -157,13 +157,19 @@ ID. Assignment routes return the complete co-owner list.
 Placement requires one archived run and an `ACTIVE` aircraft that has no other
 active flight. The aircraft must remain `ACTIVE` until that flight is removed;
 the API also rejects aircraft deletion while it is mapped. Latitude accepts
--85 to 85, longitude -180 to 180, and speed 400 to 1100 km/h. `WORLD` is the
-canonical world-scope code. Continent routes use `AF`, `AN`, `AS`, `EU`, `NA`,
-`OC`, or `SA`; country routes use ISO 3166-1 alpha-3 codes.
+-85 to 85, longitude -180 to 180, and speed 400 to 1100 km/h. These coordinates
+set the route start. `WORLD` is the canonical world-scope code. A continent
+code (`AF`, `AN`, `AS`, `EU`, `NA`, `OC`, or `SA`) selects the destination.
+Country routes require an ISO 3166-1 alpha-3 code, but currently use a small
+bounded patrol around the start instead of a country-border polygon.
 
-The API broadcasts a nominal update each second. Synthetic route motion uses
-an accelerated display clock. The archived scenario telemetry advances at
-wall-clock speed and loops after its 40 to 55 second recorded duration.
+Routes that need to reach their destination report `TRANSIT` and progress from
+0 to 1 while following a great-circle path for no more than 30 seconds. They
+then report `PATROL` and remain inside the selected conservative route profile.
+The API keeps output within latitude -82 to 82 and longitude -176 to 176, even
+for antimeridian routes and long elapsed times. Motion uses an accelerated
+display clock. Archived scenario telemetry advances at wall-clock speed and
+loops after its 40 to 55 second recorded duration.
 
 SignalR accepts `access_token` in the query only under `/hubs/operations`, as
 required by browser WebSocket transport. nginx disables access logging for the
@@ -171,6 +177,14 @@ hub path. A process-local registry stores connection, user, and session IDs;
 the broadcaster rechecks the session before delivery. This supports one API
 instance. Multiple replicas need shared connection coordination and a SignalR
 backplane.
+
+The periodic broadcaster returns immediately when no connection exists. With
+connected recipients, it loads active administrator IDs once per cycle,
+deduplicates recipient connections, caches each session check during the
+lookup, and prepares route motion and stored telemetry once per flight before
+building permission-specific responses. These changes reduce repeated work;
+they don't turn the process-local broadcaster into a fleet-scale fan-out
+service.
 
 Fixed-window limits allow 30 login requests per source address per minute, 90
 flight writes and 60 chat writes per account per minute, and 30 hub-negotiation
@@ -217,7 +231,8 @@ dotnet format backend/AeroGuard.Backend.sln --verify-no-changes --no-restore
 The integration suite uses a new temporary SQLite database, imports all seven
 replays, bootstraps a test administrator, and exercises public and protected
 routes through the in-process HTTP server. The current local snapshot passes
-53/53 xUnit test cases, including administrator password synchronization,
-bounded flight motion, map authorization, country and polar route validation,
-active-flight status, chat bounds, permission overrides, hub token scope, and
-revoked-session recipient checks.
+63/63 xUnit test cases, including administrator password synchronization,
+map authorization, continent destination transit, country and polar route
+validation, all seven continent patrol profiles sampled across 24 hours, a
+50-year finite-route case, active-flight status, chat bounds, permission
+overrides, hub token scope, and revoked-session recipient checks.

@@ -20,6 +20,8 @@ public sealed class FlightMotionTests
         Assert.Equal(52.2297, initial.Latitude, 4);
         Assert.Equal(21.0122, initial.Longitude, 4);
         Assert.Equal(0, initial.ScenarioElapsedMs);
+        Assert.Equal(FlightRoutePhases.Transit, initial.RoutePhase);
+        Assert.Equal(0.0, initial.RouteProgress);
         Assert.NotEqual(initial.Latitude, moved.Latitude);
         Assert.InRange(moved.Longitude, -180.0, 180.0);
         Assert.InRange(moved.HeadingDeg, 0.0, 360.0);
@@ -36,13 +38,14 @@ public sealed class FlightMotionTests
     }
 
     [Fact]
-    public void AcceptedPolarBoundaryRemainsStableAtPlacementTime()
+    public void AcceptedPolarBoundaryIsInsetForReliableProjection()
     {
         var flight = Flight(durationMs: 45_000) with { CenterLatitude = 85.0 };
 
         var initial = FlightMotion.Calculate(flight, StartedAt);
 
-        Assert.Equal(85.0, initial.Latitude, 4);
+        Assert.Equal(82.0, initial.Latitude, 4);
+        Assert.Equal(FlightRoutePhases.Transit, initial.RoutePhase);
     }
 
     [Theory]
@@ -72,10 +75,156 @@ public sealed class FlightMotionTests
             Assert.True(double.IsFinite(position.Latitude));
             Assert.True(double.IsFinite(position.Longitude));
             Assert.True(double.IsFinite(position.HeadingDeg));
-            Assert.InRange(position.Latitude, -85.0, 85.0);
-            Assert.InRange(position.Longitude, -180.0, 180.0);
+            Assert.InRange(position.Latitude, -82.0, 82.0);
+            Assert.InRange(position.Longitude, -176.0, 176.0);
             Assert.InRange(position.HeadingDeg, 0.0, 360.0);
+            Assert.InRange(position.RouteProgress, 0.0, 1.0);
         }
+    }
+
+    [Fact]
+    public void RussiaStartReachesSouthAmericaAndThenStaysThere()
+    {
+        var flight = Flight(durationMs: 45_000) with
+        {
+            ScopeCode = "SA",
+            CenterLatitude = 55.7558,
+            CenterLongitude = 37.6173,
+        };
+
+        var initial = FlightMotion.Calculate(flight, StartedAt);
+        var arrived = FlightMotion.Calculate(flight, StartedAt.AddSeconds(31));
+        var later = FlightMotion.Calculate(flight, StartedAt.AddHours(12));
+        var region = RouteRegionCatalog.GetContinent("SA");
+
+        Assert.Equal(FlightRoutePhases.Transit, initial.RoutePhase);
+        Assert.Equal(FlightRoutePhases.Patrol, arrived.RoutePhase);
+        Assert.True(region.Contains(arrived.Latitude, arrived.Longitude));
+        Assert.True(region.Contains(later.Latitude, later.Longitude));
+    }
+
+    [Theory]
+    [InlineData("AF")]
+    [InlineData("AN")]
+    [InlineData("AS")]
+    [InlineData("EU")]
+    [InlineData("NA")]
+    [InlineData("OC")]
+    [InlineData("SA")]
+    public void ContinentPatrolRemainsInsideItsPublishedRegion(string scopeCode)
+    {
+        var flight = Flight(durationMs: 45_000) with
+        {
+            ScopeCode = scopeCode,
+            CenterLatitude = 55.7558,
+            CenterLongitude = 37.6173,
+        };
+        var region = RouteRegionCatalog.GetContinent(scopeCode);
+
+        for (var elapsedSeconds = 31; elapsedSeconds <= 86_431; elapsedSeconds += 19)
+        {
+            var position = FlightMotion.Calculate(
+                flight,
+                StartedAt.AddSeconds(elapsedSeconds));
+
+            Assert.Equal(FlightRoutePhases.Patrol, position.RoutePhase);
+            Assert.True(
+                region.Contains(position.Latitude, position.Longitude),
+                $"{scopeCode} route left its region at {elapsedSeconds}s: "
+                + $"{position.Latitude}, {position.Longitude}");
+        }
+    }
+
+    [Fact]
+    public void PolandCountryPatrolUsesPolishDestination()
+    {
+        var poland = RouteRegionCatalog.GetCountry("POL", 52.2297, 21.0122);
+        var flight = Flight(durationMs: 45_000) with
+        {
+            ScopeType = "COUNTRY",
+            ScopeCode = "POL",
+        };
+
+        var initial = FlightMotion.Calculate(flight, StartedAt);
+        var arrived = FlightMotion.Calculate(flight, StartedAt.AddSeconds(31));
+        var later = FlightMotion.Calculate(flight, StartedAt.AddHours(12));
+
+        Assert.Equal(FlightRoutePhases.Transit, initial.RoutePhase);
+        Assert.Equal(FlightRoutePhases.Patrol, arrived.RoutePhase);
+        Assert.InRange(arrived.Latitude, 49.5, 54.5);
+        Assert.InRange(arrived.Longitude, 15.0, 23.0);
+        Assert.True(poland.Contains(later.Latitude, later.Longitude));
+    }
+
+    [Fact]
+    public void EuropePatrolNeverReachesAfricanLatitudes()
+    {
+        var flight = Flight(durationMs: 45_000) with
+        {
+            CenterLatitude = 52.2297,
+            CenterLongitude = 21.0122,
+        };
+
+        for (var elapsedSeconds = 31; elapsedSeconds <= 86_431; elapsedSeconds += 23)
+        {
+            var position = FlightMotion.Calculate(
+                flight,
+                StartedAt.AddSeconds(elapsedSeconds));
+
+            Assert.InRange(position.Latitude, 44.5, 59.5);
+            Assert.True(RouteRegionCatalog.GetContinent("EU").Contains(
+                position.Latitude,
+                position.Longitude));
+        }
+    }
+
+    [Fact]
+    public void EuropePatrolCannotLeaveEuropeAcrossTheMediterranean()
+    {
+        var europe = RouteRegionCatalog.GetContinent("EU");
+        var flight = Flight(durationMs: 45_000) with
+        {
+            ScopeCode = "EU",
+            CenterLatitude = 52.2297,
+            CenterLongitude = 21.0122,
+        };
+
+        for (var elapsedSeconds = 31; elapsedSeconds <= 86_431; elapsedSeconds += 29)
+        {
+            var position = FlightMotion.Calculate(
+                flight,
+                StartedAt.AddSeconds(elapsedSeconds));
+
+            Assert.True(
+                europe.Contains(position.Latitude, position.Longitude),
+                $"EU route left Europe at {elapsedSeconds}s: "
+                + $"{position.Latitude}, {position.Longitude}");
+            Assert.False(
+                position.Latitude < 37.0
+                && position.Longitude >= -17.0
+                && position.Longitude <= 51.0);
+        }
+    }
+
+    [Fact]
+    public void RouteRemainsFiniteAfterDecadesOfElapsedTime()
+    {
+        var flight = Flight(durationMs: 45_000) with
+        {
+            ScopeCode = "SA",
+            CenterLatitude = 55.7558,
+            CenterLongitude = 37.6173,
+        };
+
+        var position = FlightMotion.Calculate(flight, StartedAt.AddYears(50));
+
+        Assert.True(double.IsFinite(position.Latitude));
+        Assert.True(double.IsFinite(position.Longitude));
+        Assert.True(double.IsFinite(position.HeadingDeg));
+        Assert.Equal(FlightRoutePhases.Patrol, position.RoutePhase);
+        Assert.True(RouteRegionCatalog.GetContinent("SA").Contains(
+            position.Latitude,
+            position.Longitude));
     }
 
     [Fact]
