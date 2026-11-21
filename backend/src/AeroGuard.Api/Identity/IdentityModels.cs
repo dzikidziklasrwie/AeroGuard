@@ -32,5 +32,6 @@ public static class BuiltInRoles
 {
     public const string Admin = "Admin";
     public const string Operator = "Operator";
+    public const string Maintainer = "Maintainer";
     public const string Viewer = "Viewer";
 }

@@ -547,7 +547,11 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [], onUnaut
 
   const availableAircraft = useMemo(() => {
     const activeAircraftIds = new Set(flights.map((flight) => flight.aircraft_id));
-    return aircraft.filter((item) => item.status === 'ACTIVE' && !activeAircraftIds.has(item.id) && (isAdmin || item.current_user_access === 'OWNER'));
+    return aircraft.filter((item) => item.status === 'ACTIVE'
+      && !activeAircraftIds.has(item.id)
+      && (isAdmin
+        || item.current_user_access === 'OWNER'
+        || item.current_user_access === 'MAINTAINER'));
   }, [aircraft, flights, isAdmin]);
   const availableRuns = useMemo(
     () => runs.filter((run): run is RunArchiveEntry & { id: number } => run.source === 'api' && typeof run.id === 'number'),
@@ -556,7 +560,9 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [], onUnaut
   const canPlace = isAdmin || permissions.includes('FLIGHT_PLACE_OWN');
   const canSendChat = isAdmin || permissions.includes('CHAT_SEND');
   const canShareTelemetry = isAdmin || (
-    permissions.includes('TELEMETRY_SHARE') && selectedFlight?.current_user_access === 'OWNER'
+    permissions.includes('TELEMETRY_SHARE')
+      && (selectedFlight?.current_user_access === 'OWNER'
+        || selectedFlight?.current_user_access === 'MAINTAINER')
   );
   const flightMessages = selectedFlight
     ? messages[selectedFlight.id] ?? (dataMode === 'demo' ? createDemoMessages(selectedFlight, currentUser) : [])
@@ -777,7 +783,11 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [], onUnaut
         ? `Flight started in transit to ${routeDestinationLabel(saved)}.`
         : placement.kind === 'move' ? 'Simulated flight position updated.' : 'Simulated flight added to the map.');
     } catch (requestError) {
-      handleError(requestError);
+      if (requestError instanceof ApiError && requestError.status === 401) {
+        setError('You no longer have permission to change this flight. The session remains active.');
+      } else {
+        handleError(requestError);
+      }
     } finally {
       setBusy(false);
     }

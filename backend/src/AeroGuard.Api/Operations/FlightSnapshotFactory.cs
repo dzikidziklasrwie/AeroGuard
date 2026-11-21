@@ -47,12 +47,17 @@ public sealed class FlightSnapshotFactory(
             flight.CurrentUserAccess,
             Fleet.AircraftAccessLevels.Owner,
             StringComparison.Ordinal);
+        var isMaintainer = string.Equals(
+            flight.CurrentUserAccess,
+            Fleet.AircraftAccessLevels.Maintainer,
+            StringComparison.Ordinal);
+        var canManageAircraft = isOwner || isMaintainer;
         var canManage = isAdmin
-            || (isOwner && permissions.Contains(
+            || (canManageAircraft && permissions.Contains(
                 OperationPermissionNames.FlightReconfigureOwn,
                 StringComparer.Ordinal));
         var canRemove = isAdmin
-            || (isOwner && permissions.Contains(
+            || (canManageAircraft && permissions.Contains(
                 OperationPermissionNames.FlightRemoveOwn,
                 StringComparer.Ordinal));
 
