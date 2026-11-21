@@ -426,7 +426,7 @@ export default function App() {
                 <div><p>Active scenario</p><strong>{scenario.label}</strong><span>{selectedDescription}</span></div>
               </div>
               <label className="field scenario-select">
-                <span>Scenario file</span>
+                <span>Public replay scenario</span>
                 <span className="select-wrap">
                   <select value={selectedScenario} onChange={(event) => {
                     setDatasetLoad({ status: 'loading' });
@@ -514,10 +514,10 @@ export default function App() {
 
                 <Statistics dataset={dataset} />
                 <ArchitectureOverview />
-                <OperationsWorkspace runs={archiveLoad.status === 'ready' ? archiveLoad.value : []} />
-                <footer><span>AeroGuard</span><p>Avionics Health Monitoring Simulator - C++20 + ASP.NET Core + React</p><p>Portfolio engineering project</p></footer>
               </>
             )}
+            <OperationsWorkspace runs={archiveLoad.status === 'ready' ? archiveLoad.value : []} />
+            <footer><span>AeroGuard</span><p>Avionics Health Monitoring Simulator - C++20 + ASP.NET Core + React</p><p>Portfolio engineering project</p></footer>
           </>
         )}
       </main>

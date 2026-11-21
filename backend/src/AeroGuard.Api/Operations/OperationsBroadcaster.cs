@@ -22,6 +22,7 @@ public sealed class OperationsBroadcaster(
             return;
         }
 
+        var eventSequence = NextEventSequence();
         var administrators = await GetAdministratorIdsAsync(cancellationToken);
         var flights = await operationsRepository.GetAllFlightsAsync(cancellationToken);
         foreach (var flight in flights)
@@ -31,6 +32,7 @@ public sealed class OperationsBroadcaster(
                 await BroadcastFlightCoreAsync(
                     flight,
                     administrators,
+                    eventSequence,
                     cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -56,13 +58,19 @@ public sealed class OperationsBroadcaster(
             return;
         }
 
+        var eventSequence = NextEventSequence();
         var administrators = await GetAdministratorIdsAsync(cancellationToken);
-        await BroadcastFlightCoreAsync(flight, administrators, cancellationToken);
+        await BroadcastFlightCoreAsync(
+            flight,
+            administrators,
+            eventSequence,
+            cancellationToken);
     }
 
     private async Task BroadcastFlightCoreAsync(
         FlightRecord flight,
         IReadOnlyList<long> administrators,
+        long eventSequence,
         CancellationToken cancellationToken)
     {
         var administratorIds = administrators.ToHashSet();
@@ -87,7 +95,6 @@ public sealed class OperationsBroadcaster(
                 group => group.Key,
                 group => group.Select(connection => connection.ConnectionId).ToArray());
         var prepared = await snapshotFactory.PrepareAsync(flight, cancellationToken);
-        var eventSequence = NextEventSequence();
 
         var administratorConnections = activeConnections
             .Where(connection => administratorIds.Contains(connection.UserId))
@@ -156,7 +163,8 @@ public sealed class OperationsBroadcaster(
             return;
         }
 
-        var payload = new { id = flightId, event_sequence = NextEventSequence() };
+        var eventSequence = NextEventSequence();
+        var payload = new { id = flightId, event_sequence = eventSequence };
         var recipients = (await GetAdministratorIdsAsync(cancellationToken))
             .Concat(assignedUserIds)
             .Distinct()
@@ -201,6 +209,7 @@ public sealed class OperationsBroadcaster(
             return;
         }
 
+        var eventSequence = NextEventSequence();
         var recipientConnections = await connections.GetActiveConnectionIdsAsync(
             [userId],
             cancellationToken);
@@ -208,7 +217,7 @@ public sealed class OperationsBroadcaster(
             .Clients(recipientConnections)
             .SendAsync(
                 "flight_removed",
-                new { id = flightId, event_sequence = NextEventSequence() },
+                new { id = flightId, event_sequence = eventSequence },
                 cancellationToken);
     }
 

@@ -56,10 +56,10 @@
       "tick_ms": 100
     },
     {
-      "description": "Synthetic temperature readings cross the fault threshold for fifteen seconds, then cool down.",
-      "duration_ms": 45000,
+      "description": "A sustained synthetic thermal fault escalates from overheating to a simulated fire and impact sequence.",
+      "duration_ms": 105000,
       "file": "simulated-overheating.jsonl",
-      "final_state": "NORMAL",
+      "final_state": "FAULT",
       "id": "simulated-overheating",
       "label": "Simulated overheating",
       "tick_ms": 100

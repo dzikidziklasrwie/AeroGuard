@@ -73,6 +73,25 @@ public static class OperationsEndpoints
             .ProducesProblem(StatusCodes.Status409Conflict)
             .RequireRateLimiting("operations-write");
 
+        group.MapPut("/flights/{id:long:min(1)}/scenario", async (
+            long id,
+            HttpContext context,
+            ChangeFlightScenarioRequest request,
+            OperationsService operations,
+            CancellationToken cancellationToken) =>
+            Results.Ok(await operations.ChangeFlightScenarioAsync(
+                CurrentUser.FromPrincipal(context.User),
+                id,
+                request,
+                cancellationToken)))
+            .WithName("ChangeFlightScenario")
+            .WithSummary("Assign a recorded scenario without changing the selected destination")
+            .Produces<FlightDto>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .ProducesProblem(StatusCodes.Status403Forbidden)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .RequireRateLimiting("operations-write");
+
         group.MapDelete("/flights/{id:long:min(1)}", async (
             long id,
             HttpContext context,

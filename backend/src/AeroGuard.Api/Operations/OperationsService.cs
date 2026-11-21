@@ -255,6 +255,31 @@ public sealed class OperationsService(
         return snapshot;
     }
 
+    public async Task<FlightDto> ChangeFlightScenarioAsync(
+        CurrentUser actor,
+        long flightId,
+        ChangeFlightScenarioRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+        ArgumentNullException.ThrowIfNull(request);
+        var current = await RequireVisibleFlightAsync(actor, flightId, cancellationToken);
+        var position = FlightMotion.Calculate(current, timeProvider.GetUtcNow());
+        return await UpdateFlightAsync(
+            actor,
+            flightId,
+            new UpdateFlightRequest(
+                current.AircraftId,
+                request.RunId,
+                current.ScopeType,
+                current.ScopeCode,
+                position.Latitude,
+                position.Longitude,
+                current.SpeedKph,
+                request.ExpectedVersion),
+            cancellationToken);
+    }
+
     public async Task RemoveFlightAsync(
         CurrentUser actor,
         long flightId,

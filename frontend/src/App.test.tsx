@@ -111,7 +111,15 @@ describe('AeroGuard dashboard', () => {
     const apiManifest = {
       ...manifestFixture,
       generated_by: 'AeroGuard REST API',
-      scenarios: [{ ...manifestFixture.scenarios[0], file: '/api/runs/11/replay' }],
+      scenarios: [
+        { ...manifestFixture.scenarios[0], file: '/api/runs/11/replay' },
+        {
+          ...manifestFixture.scenarios[0],
+          id: 'communication-interruption',
+          label: 'Communication interruption',
+          file: '/api/runs/12/replay',
+        },
+      ],
     };
     const fetchMock = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input);
@@ -127,7 +135,7 @@ describe('AeroGuard dashboard', () => {
         record_count: 74,
         replay_url: '/api/runs/11/replay',
       }]));
-      if (url === '/api/runs/11/replay') return Promise.resolve(response(jsonlFixture));
+      if (url === '/api/runs/11/replay' || url === '/api/runs/12/replay') return Promise.resolve(response(jsonlFixture));
       if (url === '/api/auth/login') return Promise.resolve(response({ access_token: 'opaque-session', token_type: 'Bearer', expires_at_utc: '2030-01-01T12:00:00Z', user: admin }));
       if (url === '/api/auth/me') return Promise.resolve(response(admin));
       if (url === '/api/aircraft') return Promise.resolve(response(aircraft));
@@ -150,6 +158,11 @@ describe('AeroGuard dashboard', () => {
 
     expect(await screen.findByRole('heading', { name: 'Simulated operations map' })).toBeInTheDocument();
     expect(screen.getByText('Simulation only')).toBeInTheDocument();
+    expect(screen.getByText(/Signed in as admin/)).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('Public replay scenario'), 'communication-interruption');
+    expect(screen.getByText(/Signed in as admin/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText('Public replay scenario')).toHaveValue('communication-interruption'));
     await user.click(screen.getByRole('button', { name: 'Fleet' }));
     expect(await screen.findByRole('heading', { name: '1 visible aircraft' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Test aircraft 01' })).toBeInTheDocument();

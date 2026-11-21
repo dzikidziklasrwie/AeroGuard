@@ -176,6 +176,16 @@ export const updateOperationFlight = (token: string, flight: FlightRecord, input
     body: { ...input, expected_version: flight.version },
   });
 
+export const updateOperationFlightScenario = (
+  token: string,
+  flight: FlightRecord,
+  runId: number,
+) => request<FlightRecord>(`/api/operations/flights/${flight.id}/scenario`, {
+  method: 'PUT',
+  token,
+  body: { run_id: runId, expected_version: flight.version },
+});
+
 export const deleteOperationFlight = (token: string, flightId: number) =>
   request<void>(`/api/operations/flights/${flightId}`, { method: 'DELETE', token });
 
