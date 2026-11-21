@@ -59,7 +59,7 @@ public sealed class AccountAdministrationService(
         }
         catch (SqliteException exception) when (exception.SqliteErrorCode == 19)
         {
-            throw ApiProblemException.Conflict("A user with that username already exists.");
+            throw ApiProblemException.Conflict("The account could not be created. Review the submitted details.");
         }
 
         await auditRepository.AppendAsync(
