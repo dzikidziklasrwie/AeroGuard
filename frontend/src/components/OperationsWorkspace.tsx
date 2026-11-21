@@ -314,9 +314,13 @@ function FleetPanel({ token, currentUser, aircraft, users, busy, runAction, refr
                 setAssignmentUserId('');
               }}>
                 <label><span>Account</span><select value={assignmentUserId} onChange={(event) => setAssignmentUserId(event.target.value)} required><option value="">Select account</option>{users.filter((user) => user.is_active).map((user) => <option key={user.id} value={user.id}>{user.display_name} ({user.username})</option>)}</select></label>
-                <label><span>Access</span><select value={assignmentAccess} onChange={(event) => setAssignmentAccess(event.target.value as AircraftAccessLevel)}>{ACCESS_LEVELS.map((level) => <option value={level} key={level}>{titleCase(level)}</option>)}</select></label>
+                <label><span>Aircraft access</span><select value={assignmentAccess} onChange={(event) => setAssignmentAccess(event.target.value as AircraftAccessLevel)} aria-describedby="aircraft-access-help">{ACCESS_LEVELS.map((level) => <option value={level} key={level}>{titleCase(level)}</option>)}</select></label>
                 <button className="button secondary-button" type="submit" disabled={busy}>Save assignment</button>
               </form>
+              <p className="assignment-access-help" id="aircraft-access-help">
+                Owner and Maintainer can manage this aircraft; Viewer has read-only access.
+                Operator is an account role and is configured separately in People and roles.
+              </p>
               <div className="assignment-list">
                 {assignments.map((assignment) => <div key={assignment.user_id}><span><strong>{assignment.display_name}</strong><small>@{assignment.username}</small></span><span>{titleCase(assignment.access_level)}</span><button className="text-button danger-text" type="button" disabled={busy} onClick={async () => mutate('Aircraft assignment removed.', () => removeAircraftAssignment(token, selected.id, assignment.user_id))}>Remove</button></div>)}
                 {!assignments.length && <p className="empty-copy">No accounts are assigned to this aircraft.</p>}
@@ -426,7 +430,7 @@ function AccountsPanel({ token, currentUser, users, roles, busy, runAction, refr
           <h4>Create account</h4>
           {createUserError && <p className="workspace-message error" role="alert">{createUserError}</p>}
           <div className="form-grid"><label><span>Username</span><input value={username} onChange={(event) => { setUsername(event.target.value); setCreateUserError(''); }} minLength={3} maxLength={64} pattern="[A-Za-z0-9][A-Za-z0-9._-]*" placeholder="operator1" autoComplete="username" aria-describedby="account-username-help" required /><small id="account-username-help">3–64 characters; ASCII letters, digits, dots, underscores or hyphens.</small></label><label><span>Display name</span><input value={displayName} onChange={(event) => { setDisplayName(event.target.value); setCreateUserError(''); }} maxLength={100} placeholder="Flight Operator" autoComplete="name" required /></label><label><span>Initial password</span><input type="password" autoComplete="new-password" minLength={12} maxLength={128} value={password} onChange={(event) => { setPassword(event.target.value); setCreateUserError(''); }} aria-describedby="account-password-help" required /><small id="account-password-help">12–128 characters; include at least 3 of: lowercase, uppercase, digits, symbols.</small></label></div>
-          <fieldset className="role-checks"><legend>Initial roles</legend>{roles.map((role) => <label key={role.id}><input type="checkbox" checked={newUserRoles.includes(role.name)} onChange={(event) => setNewUserRoles((current) => event.target.checked ? [...current, role.name] : current.filter((name) => name !== role.name))} /><span>{role.name}</span></label>)}</fieldset>
+          <fieldset className="role-checks"><legend>Initial account roles</legend>{roles.map((role) => <label key={role.id} title={role.description}><input type="checkbox" checked={newUserRoles.includes(role.name)} onChange={(event) => setNewUserRoles((current) => event.target.checked ? [...current, role.name] : current.filter((name) => name !== role.name))} /><span>{role.name}</span></label>)}</fieldset>
           <button className="button primary-button" type="submit" disabled={busy || newUserRoles.length === 0}>Create account</button>
         </form>
         {permissionLoadFailed && <p className="workspace-message error" role="status">Some map permissions couldn't be loaded.</p>}

@@ -121,6 +121,9 @@ plays automatically and loops until another run is chosen. Sign in to the
 operations workspace to manage accounts, roles, aircraft, assignments, and
 audit records. The signed-in workspace opens on a simulated world map with
 assigned flights, stored C++ telemetry, flight chat, and authorized controls.
+Account roles and aircraft assignments are separate: `Operator`, `Maintainer`,
+and `Viewer` define account capabilities, while `OWNER`, `MAINTAINER`, and
+`VIEWER` define access to a specific aircraft.
 Coordinates define a route's start. A continent selection defines its
 destination: the marker follows a great-circle `TRANSIT` for at most 30 seconds,
 then enters a bounded `PATROL`. The map supports zoom, pan, reset, and focus on
