@@ -379,7 +379,7 @@ describe('OperationsMap', () => {
     await user.click(await screen.findByRole('button', { name: 'Move aircraft' }));
     await user.click(screen.getByRole('button', { name: 'Save position' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('You no longer have permission to change this flight.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('The session could not authorize this map change.');
     expect(onUnauthorized).not.toHaveBeenCalled();
   });
 
