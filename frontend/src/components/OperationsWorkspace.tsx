@@ -24,7 +24,6 @@ import {
   ApiError,
 } from '../api/client';
 import {
-  ACCESS_LEVELS,
   AIRCRAFT_STATUSES,
   type AccessSession,
   type AircraftAccessLevel,
@@ -49,6 +48,22 @@ type WorkspaceView = 'map' | 'fleet' | 'accounts' | 'audit';
 
 function hasRole(user: UserAccount, role: string): boolean {
   return user.roles.some((candidate) => candidate.toLowerCase() === role.toLowerCase());
+}
+
+const fleetRoleOptions: ReadonlyArray<{ value: AircraftAccessLevel; label: string }> = [
+  { value: 'OWNER', label: 'Operator' },
+  { value: 'MAINTAINER', label: 'Maintainer' },
+  { value: 'VIEWER', label: 'Viewer' },
+];
+
+function suggestedFleetAccess(user: UserAccount): AircraftAccessLevel {
+  if (hasRole(user, 'Operator')) return 'OWNER';
+  if (hasRole(user, 'Maintainer')) return 'MAINTAINER';
+  return 'VIEWER';
+}
+
+function fleetRoleLabel(access: AircraftAccessLevel): string {
+  return fleetRoleOptions.find((option) => option.value === access)?.label ?? titleCase(access);
 }
 
 function readableError(error: unknown): string {
@@ -237,11 +252,17 @@ function FleetPanel({ token, currentUser, aircraft, users, busy, runAction, refr
 
   const canEdit = selected && (isAdmin || selected.current_user_access === 'OWNER' || selected.current_user_access === 'MAINTAINER');
 
-  async function mutate(successMessage: string, action: () => Promise<unknown>) {
-    if (await runAction(successMessage, action)) {
+  async function mutateWithResult(successMessage: string, action: () => Promise<unknown>) {
+    const succeeded = await runAction(successMessage, action);
+    if (succeeded) {
       await refreshFleet();
       await loadAssignments();
     }
+    return succeeded;
+  }
+
+  async function mutate(successMessage: string, action: () => Promise<unknown>) {
+    await mutateWithResult(successMessage, action);
   }
 
   return (
@@ -310,19 +331,26 @@ function FleetPanel({ token, currentUser, aircraft, users, busy, runAction, refr
                 event.preventDefault();
                 const userId = Number(assignmentUserId);
                 if (!userId) return;
-                await mutate('Aircraft assignment saved.', () => setAircraftAssignment(token, selected.id, userId, assignmentAccess));
-                setAssignmentUserId('');
+                if (await mutateWithResult('Aircraft assignment saved.', () => setAircraftAssignment(token, selected.id, userId, assignmentAccess))) {
+                  setAssignmentUserId('');
+                }
               }}>
-                <label><span>Account</span><select value={assignmentUserId} onChange={(event) => setAssignmentUserId(event.target.value)} required><option value="">Select account</option>{users.filter((user) => user.is_active).map((user) => <option key={user.id} value={user.id}>{user.display_name} ({user.username})</option>)}</select></label>
-                <label><span>Aircraft access</span><select value={assignmentAccess} onChange={(event) => setAssignmentAccess(event.target.value as AircraftAccessLevel)} aria-describedby="aircraft-access-help">{ACCESS_LEVELS.map((level) => <option value={level} key={level}>{titleCase(level)}</option>)}</select></label>
-                <button className="button secondary-button" type="submit" disabled={busy}>Save assignment</button>
+                <label><span>Account</span><select value={assignmentUserId} onChange={(event) => {
+                  const userId = Number(event.target.value);
+                  setAssignmentUserId(event.target.value);
+                  const account = users.find((user) => user.id === userId);
+                  if (account) setAssignmentAccess(suggestedFleetAccess(account));
+                }} required><option value="">Select account</option>{users.filter((user) => user.is_active).map((user) => <option key={user.id} value={user.id}>{user.display_name} ({user.username}) - {user.roles.join(', ') || 'No account role'}</option>)}</select></label>
+                <label><span>Fleet role</span><select value={assignmentAccess} onChange={(event) => setAssignmentAccess(event.target.value as AircraftAccessLevel)} aria-describedby="aircraft-access-help">{fleetRoleOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select></label>
+                <button className="button secondary-button" type="submit" disabled={busy || !assignmentUserId}>Assign aircraft</button>
               </form>
               <p className="assignment-access-help" id="aircraft-access-help">
-                Owner and Maintainer can manage this aircraft; Viewer has read-only access.
-                Operator is an account role and is configured separately in People and roles.
+                The Fleet role follows People and roles: Operator manages and operates the aircraft,
+                Maintainer can manage it, and Viewer has read-only access. Selecting an account proposes
+                the matching role automatically; an administrator can change it before assignment.
               </p>
               <div className="assignment-list">
-                {assignments.map((assignment) => <div key={assignment.user_id}><span><strong>{assignment.display_name}</strong><small>@{assignment.username}</small></span><span>{titleCase(assignment.access_level)}</span><button className="text-button danger-text" type="button" disabled={busy} onClick={async () => mutate('Aircraft assignment removed.', () => removeAircraftAssignment(token, selected.id, assignment.user_id))}>Remove</button></div>)}
+                {assignments.map((assignment) => <div key={assignment.user_id}><span><strong>{assignment.display_name}</strong><small>@{assignment.username}</small></span><span>{fleetRoleLabel(assignment.access_level)}</span><button className="text-button danger-text" type="button" disabled={busy} onClick={async () => mutate('Aircraft assignment removed.', () => removeAircraftAssignment(token, selected.id, assignment.user_id))}>Remove</button></div>)}
                 {!assignments.length && <p className="empty-copy">No accounts are assigned to this aircraft.</p>}
               </div>
             </section>}
