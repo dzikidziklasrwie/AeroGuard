@@ -56,6 +56,31 @@ function readableError(error: unknown): string {
   return 'The request failed. Try again.';
 }
 
+function validateNewAccount(username: string, displayName: string, password: string): string | null {
+  const normalizedUsername = username.trim();
+  if (normalizedUsername.length < 3 || normalizedUsername.length > 64
+    || !/^[A-Za-z0-9]/.test(normalizedUsername)
+    || !/^[A-Za-z0-9._-]+$/.test(normalizedUsername)) {
+    return 'Username: use 3–64 ASCII letters, digits, dots, underscores or hyphens; start with a letter or digit.';
+  }
+  if (displayName.trim().length < 1 || displayName.trim().length > 100) {
+    return 'Display name: use 1–100 characters.';
+  }
+  if (password.length < 12 || password.length > 128) {
+    return 'Password: use 12–128 characters.';
+  }
+  const categories = [
+    /[a-z]/.test(password),
+    /[A-Z]/.test(password),
+    /\d/.test(password),
+    /[^A-Za-z0-9]/.test(password),
+  ].filter(Boolean).length;
+  if (categories < 3) {
+    return 'Password: use characters from at least three groups: lowercase, uppercase, digits and symbols.';
+  }
+  return null;
+}
+
 function LoginPanel({ onAuthenticated }: { onAuthenticated: (session: AccessSession) => void }) {
   const [username, setUsername] = useState('admin');
   const [password, setPassword] = useState('');
@@ -347,6 +372,7 @@ function AccountsPanel({ token, currentUser, users, roles, busy, runAction, refr
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
+  const [createUserError, setCreateUserError] = useState('');
   const [newUserRoles, setNewUserRoles] = useState<string[]>(['Viewer']);
   const [roleName, setRoleName] = useState('');
   const [roleDescription, setRoleDescription] = useState('');
@@ -385,6 +411,12 @@ function AccountsPanel({ token, currentUser, users, roles, busy, runAction, refr
         <div className="workspace-section-heading"><div><p className="section-kicker">Account directory</p><h3 id="users-title">Users</h3></div><span>{users.length} accounts</span></div>
         <form className="entity-form create-user-form" onSubmit={async (event) => {
           event.preventDefault();
+          const validationError = validateNewAccount(username, displayName, password);
+          if (validationError) {
+            setCreateUserError(validationError);
+            return;
+          }
+          setCreateUserError('');
           const saved = await runAction('User account created.', () => createUser(token, { username, display_name: displayName, password, roles: newUserRoles }));
           if (saved) {
             setUsername(''); setDisplayName(''); setPassword(''); setNewUserRoles(['Viewer']);
@@ -392,7 +424,8 @@ function AccountsPanel({ token, currentUser, users, roles, busy, runAction, refr
           }
         }}>
           <h4>Create account</h4>
-          <div className="form-grid"><label><span>Username</span><input value={username} onChange={(event) => setUsername(event.target.value)} required /></label><label><span>Display name</span><input value={displayName} onChange={(event) => setDisplayName(event.target.value)} required /></label><label><span>Initial password</span><input type="password" autoComplete="new-password" minLength={12} value={password} onChange={(event) => setPassword(event.target.value)} required /></label></div>
+          {createUserError && <p className="workspace-message error" role="alert">{createUserError}</p>}
+          <div className="form-grid"><label><span>Username</span><input value={username} onChange={(event) => { setUsername(event.target.value); setCreateUserError(''); }} minLength={3} maxLength={64} pattern="[A-Za-z0-9][A-Za-z0-9._-]*" placeholder="operator1" autoComplete="username" aria-describedby="account-username-help" required /><small id="account-username-help">3–64 characters; ASCII letters, digits, dots, underscores or hyphens.</small></label><label><span>Display name</span><input value={displayName} onChange={(event) => { setDisplayName(event.target.value); setCreateUserError(''); }} maxLength={100} placeholder="Flight Operator" autoComplete="name" required /></label><label><span>Initial password</span><input type="password" autoComplete="new-password" minLength={12} maxLength={128} value={password} onChange={(event) => { setPassword(event.target.value); setCreateUserError(''); }} aria-describedby="account-password-help" required /><small id="account-password-help">12–128 characters; include at least 3 of: lowercase, uppercase, digits, symbols.</small></label></div>
           <fieldset className="role-checks"><legend>Initial roles</legend>{roles.map((role) => <label key={role.id}><input type="checkbox" checked={newUserRoles.includes(role.name)} onChange={(event) => setNewUserRoles((current) => event.target.checked ? [...current, role.name] : current.filter((name) => name !== role.name))} /><span>{role.name}</span></label>)}</fieldset>
           <button className="button primary-button" type="submit" disabled={busy || newUserRoles.length === 0}>Create account</button>
         </form>
