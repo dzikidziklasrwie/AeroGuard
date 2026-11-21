@@ -412,6 +412,22 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [], onUnaut
     setError(requestError instanceof Error ? requestError.message : 'The operation failed. Try again.');
   }, [onUnauthorized]);
 
+  const handleMapOperationError = useCallback((requestError: unknown) => {
+    if (requestError instanceof ApiError) {
+      if (requestError.status === 401) {
+        setError('The session could not authorize this map change. Sign in again only if the session has expired.');
+      } else if (requestError.status === 403) {
+        setError('You do not have permission to change this flight.');
+      } else if (requestError.status === 409) {
+        setError(requestError.message || 'The flight changed. Refresh and try again.');
+      } else {
+        setError(requestError.message);
+      }
+      return;
+    }
+    setError(requestError instanceof Error ? requestError.message : 'The map operation failed. Try again.');
+  }, []);
+
   useEffect(() => {
     const controller = new AbortController();
     let active = true;
@@ -783,11 +799,7 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [], onUnaut
         ? `Flight started in transit to ${routeDestinationLabel(saved)}.`
         : placement.kind === 'move' ? 'Simulated flight position updated.' : 'Simulated flight added to the map.');
     } catch (requestError) {
-      if (requestError instanceof ApiError && requestError.status === 401) {
-        setError('You no longer have permission to change this flight. The session remains active.');
-      } else {
-        handleError(requestError);
-      }
+      handleMapOperationError(requestError);
     } finally {
       setBusy(false);
     }
@@ -804,7 +816,7 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [], onUnaut
       setPlacement(null);
       setNotice('Simulated flight removed from the map.');
     } catch (requestError) {
-      handleError(requestError);
+      handleMapOperationError(requestError);
     } finally {
       setBusy(false);
     }
@@ -838,7 +850,7 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [], onUnaut
       setMessageText('');
       setShareType('TEXT');
     } catch (requestError) {
-      handleError(requestError);
+      handleMapOperationError(requestError);
     } finally {
       setBusy(false);
     }
