@@ -140,7 +140,7 @@ public sealed class OperationsRepository(
                       FROM aircraft_assignments
                       WHERE aircraft_assignments.aircraft_id = aircraft.id
                         AND aircraft_assignments.user_id = $placed_by
-                        AND aircraft_assignments.access_level = 'OWNER'
+                        AND aircraft_assignments.access_level IN ('OWNER', 'MAINTAINER')
                   )
               );
             """;
@@ -211,7 +211,7 @@ public sealed class OperationsRepository(
                       FROM aircraft_assignments
                       WHERE aircraft_assignments.aircraft_id = active_flights.aircraft_id
                         AND aircraft_assignments.user_id = $current_user_id
-                        AND aircraft_assignments.access_level = 'OWNER'
+                        AND aircraft_assignments.access_level IN ('OWNER', 'MAINTAINER')
                   )
               );
             """;
@@ -255,7 +255,7 @@ public sealed class OperationsRepository(
                       FROM aircraft_assignments
                       WHERE aircraft_assignments.aircraft_id = active_flights.aircraft_id
                         AND aircraft_assignments.user_id = $current_user_id
-                        AND aircraft_assignments.access_level = 'OWNER'
+                        AND aircraft_assignments.access_level IN ('OWNER', 'MAINTAINER')
                   )
               );
             """;
@@ -455,7 +455,7 @@ public sealed class OperationsRepository(
                                   FROM user_roles
                                   JOIN roles ON roles.id = user_roles.role_id
                                   WHERE user_roles.user_id = $sender_user_id
-                                    AND roles.name IN ('Operator', 'Viewer') COLLATE NOCASE
+                                    AND roles.name IN ('Operator', 'Maintainer', 'Viewer') COLLATE NOCASE
                               )
                           )
                       )
@@ -476,7 +476,7 @@ public sealed class OperationsRepository(
                           FROM aircraft_assignments
                           WHERE aircraft_assignments.aircraft_id = active_flights.aircraft_id
                             AND aircraft_assignments.user_id = $sender_user_id
-                            AND aircraft_assignments.access_level = 'OWNER'
+                            AND aircraft_assignments.access_level IN ('OWNER', 'MAINTAINER')
                       )
                       AND (
                           EXISTS (
@@ -497,7 +497,7 @@ public sealed class OperationsRepository(
                                   FROM user_roles
                                   JOIN roles ON roles.id = user_roles.role_id
                                   WHERE user_roles.user_id = $sender_user_id
-                                    AND roles.name = 'Operator' COLLATE NOCASE
+                                    AND roles.name IN ('Operator', 'Maintainer') COLLATE NOCASE
                               )
                           )
                       )

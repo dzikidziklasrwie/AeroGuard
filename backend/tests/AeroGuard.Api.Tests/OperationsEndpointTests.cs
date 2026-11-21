@@ -176,17 +176,41 @@ public sealed class OperationsEndpointTests(AeroGuardApiFactory factory)
         var flight = await ReadJsonAsync(placement);
         var flightId = flight.GetProperty("id").GetInt64();
 
+        using var scenarioChange = await SendAuthorizedJsonAsync(
+            HttpMethod.Put,
+            $"/api/operations/flights/{flightId}/scenario",
+            admin.Token,
+            new
+            {
+                run_id = replacementRunId,
+                expected_version = flight.GetProperty("version").GetInt64(),
+            });
+        var scenarioChanged = await ReadJsonAsync(scenarioChange);
+        using var staleScenarioChange = await SendAuthorizedJsonAsync(
+            HttpMethod.Put,
+            $"/api/operations/flights/{flightId}/scenario",
+            admin.Token,
+            new
+            {
+                run_id = initialRunId,
+                expected_version = flight.GetProperty("version").GetInt64(),
+            });
+
         using var update = await SendAuthorizedJsonAsync(
             HttpMethod.Put,
             $"/api/operations/flights/{flightId}",
             admin.Token,
-            FlightUpdate(aircraftId, replacementRunId, flight.GetProperty("version").GetInt64()));
+            FlightUpdate(aircraftId, replacementRunId, scenarioChanged.GetProperty("version").GetInt64()));
         var updated = await ReadJsonAsync(update);
         using var remove = await SendAuthorizedAsync(
             HttpMethod.Delete,
             $"/api/operations/flights/{flightId}",
             admin.Token);
 
+        Assert.Equal(HttpStatusCode.OK, scenarioChange.StatusCode);
+        Assert.Equal("multiple-subsystem-failures", scenarioChanged.GetProperty("scenario").GetString());
+        Assert.Equal("WORLD", scenarioChanged.GetProperty("scope_code").GetString());
+        Assert.Equal(HttpStatusCode.Conflict, staleScenarioChange.StatusCode);
         Assert.Equal(HttpStatusCode.OK, update.StatusCode);
         Assert.Equal("multiple-subsystem-failures", updated.GetProperty("scenario").GetString());
         Assert.Equal(username, updated.GetProperty("owner_username").GetString());

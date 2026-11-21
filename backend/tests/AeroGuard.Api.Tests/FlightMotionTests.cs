@@ -207,6 +207,38 @@ public sealed class FlightMotionTests
     }
 
     [Fact]
+    public void ContinentTransitJoinsThePatrolWithoutAPositionJump()
+    {
+        var flight = Flight(durationMs: 45_000) with
+        {
+            ScopeCode = "AF",
+            CenterLatitude = 55.7558,
+            CenterLongitude = 37.6173,
+        };
+        var previous = FlightMotion.Calculate(flight, StartedAt);
+        FlightPosition? firstPatrol = null;
+
+        for (var elapsedMs = 100; elapsedMs <= 30_000; elapsedMs += 100)
+        {
+            var current = FlightMotion.Calculate(
+                flight,
+                StartedAt.AddMilliseconds(elapsedMs));
+            if (previous.RoutePhase == FlightRoutePhases.Transit
+                && current.RoutePhase == FlightRoutePhases.Patrol)
+            {
+                firstPatrol = current;
+                break;
+            }
+
+            previous = current;
+        }
+
+        var patrol = Assert.IsType<FlightPosition>(firstPatrol);
+        Assert.InRange(Math.Abs(patrol.Latitude - previous.Latitude), 0.0, 1.0);
+        Assert.InRange(Math.Abs(patrol.Longitude - previous.Longitude), 0.0, 1.0);
+    }
+
+    [Fact]
     public void RouteRemainsFiniteAfterDecadesOfElapsedTime()
     {
         var flight = Flight(durationMs: 45_000) with
@@ -225,6 +257,34 @@ public sealed class FlightMotionTests
         Assert.True(RouteRegionCatalog.GetContinent("SA").Contains(
             position.Latitude,
             position.Longitude));
+    }
+
+    [Fact]
+    public void OverheatingRouteHoldsDuringDestructionAndResumesOnReplay()
+    {
+        var flight = Flight(durationMs: 105_000) with
+        {
+            Scenario = "simulated-overheating",
+        };
+
+        var destructionStart = FlightMotion.Calculate(
+            flight,
+            StartedAt.AddSeconds(80));
+        var debrisPhase = FlightMotion.Calculate(
+            flight,
+            StartedAt.AddSeconds(90));
+        var nextReplayStart = FlightMotion.Calculate(
+            flight,
+            StartedAt.AddSeconds(105));
+        var replayMoving = FlightMotion.Calculate(
+            flight,
+            StartedAt.AddSeconds(106));
+
+        Assert.Equal(destructionStart.Latitude, debrisPhase.Latitude, 8);
+        Assert.Equal(destructionStart.Longitude, debrisPhase.Longitude, 8);
+        Assert.Equal(destructionStart.Latitude, nextReplayStart.Latitude, 8);
+        Assert.Equal(destructionStart.Longitude, nextReplayStart.Longitude, 8);
+        Assert.NotEqual(nextReplayStart.Latitude, replayMoving.Latitude);
     }
 
     [Fact]

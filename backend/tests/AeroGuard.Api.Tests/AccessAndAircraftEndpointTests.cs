@@ -97,6 +97,7 @@ public sealed class AccessAndAircraftEndpointTests(AeroGuardApiFactory factory)
                 password = "Viewer-Password-42!",
                 roles = new[] { "Viewer" },
             });
+        var duplicateBody = await ReadJsonAsync(duplicate);
         using var retainAdmin = await SendAuthorizedJsonAsync(
             HttpMethod.Put,
             $"/api/admin/users/{login.UserId}/roles",
@@ -116,6 +117,9 @@ public sealed class AccessAndAircraftEndpointTests(AeroGuardApiFactory factory)
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
         Assert.Equal(username, createdBody.GetProperty("username").GetString());
         Assert.Equal(HttpStatusCode.Conflict, duplicate.StatusCode);
+        Assert.Equal(
+            "The account could not be created. Review the submitted details.",
+            duplicateBody.GetProperty("detail").GetString());
         Assert.Equal(HttpStatusCode.OK, retainAdmin.StatusCode);
         Assert.Equal(HttpStatusCode.Conflict, removeAdmin.StatusCode);
         Assert.Equal(HttpStatusCode.Conflict, deactivateSelf.StatusCode);

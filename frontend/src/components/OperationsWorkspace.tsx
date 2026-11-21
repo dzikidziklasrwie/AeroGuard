@@ -24,7 +24,6 @@ import {
   ApiError,
 } from '../api/client';
 import {
-  ACCESS_LEVELS,
   AIRCRAFT_STATUSES,
   type AccessSession,
   type AircraftAccessLevel,
@@ -51,9 +50,50 @@ function hasRole(user: UserAccount, role: string): boolean {
   return user.roles.some((candidate) => candidate.toLowerCase() === role.toLowerCase());
 }
 
+const fleetRoleOptions: ReadonlyArray<{ value: AircraftAccessLevel; label: string }> = [
+  { value: 'OWNER', label: 'Operator' },
+  { value: 'MAINTAINER', label: 'Maintainer' },
+  { value: 'VIEWER', label: 'Viewer' },
+];
+
+function suggestedFleetAccess(user: UserAccount): AircraftAccessLevel {
+  if (hasRole(user, 'Operator')) return 'OWNER';
+  if (hasRole(user, 'Maintainer')) return 'MAINTAINER';
+  return 'VIEWER';
+}
+
+function fleetRoleLabel(access: AircraftAccessLevel): string {
+  return fleetRoleOptions.find((option) => option.value === access)?.label ?? titleCase(access);
+}
+
 function readableError(error: unknown): string {
   if (error instanceof ApiError || error instanceof Error) return error.message;
   return 'The request failed. Try again.';
+}
+
+function validateNewAccount(username: string, displayName: string, password: string): string | null {
+  const normalizedUsername = username.trim();
+  if (normalizedUsername.length < 3 || normalizedUsername.length > 64
+    || !/^[A-Za-z0-9]/.test(normalizedUsername)
+    || !/^[A-Za-z0-9._-]+$/.test(normalizedUsername)) {
+    return 'Username: use 3–64 ASCII letters, digits, dots, underscores or hyphens; start with a letter or digit.';
+  }
+  if (displayName.trim().length < 1 || displayName.trim().length > 100) {
+    return 'Display name: use 1–100 characters.';
+  }
+  if (password.length < 12 || password.length > 128) {
+    return 'Password: use 12–128 characters.';
+  }
+  const categories = [
+    /[a-z]/.test(password),
+    /[A-Z]/.test(password),
+    /\d/.test(password),
+    /[^A-Za-z0-9]/.test(password),
+  ].filter(Boolean).length;
+  if (categories < 3) {
+    return 'Password: use characters from at least three groups: lowercase, uppercase, digits and symbols.';
+  }
+  return null;
 }
 
 function LoginPanel({ onAuthenticated }: { onAuthenticated: (session: AccessSession) => void }) {
@@ -212,11 +252,17 @@ function FleetPanel({ token, currentUser, aircraft, users, busy, runAction, refr
 
   const canEdit = selected && (isAdmin || selected.current_user_access === 'OWNER' || selected.current_user_access === 'MAINTAINER');
 
-  async function mutate(successMessage: string, action: () => Promise<unknown>) {
-    if (await runAction(successMessage, action)) {
+  async function mutateWithResult(successMessage: string, action: () => Promise<unknown>) {
+    const succeeded = await runAction(successMessage, action);
+    if (succeeded) {
       await refreshFleet();
       await loadAssignments();
     }
+    return succeeded;
+  }
+
+  async function mutate(successMessage: string, action: () => Promise<unknown>) {
+    await mutateWithResult(successMessage, action);
   }
 
   return (
@@ -285,15 +331,26 @@ function FleetPanel({ token, currentUser, aircraft, users, busy, runAction, refr
                 event.preventDefault();
                 const userId = Number(assignmentUserId);
                 if (!userId) return;
-                await mutate('Aircraft assignment saved.', () => setAircraftAssignment(token, selected.id, userId, assignmentAccess));
-                setAssignmentUserId('');
+                if (await mutateWithResult('Aircraft assignment saved.', () => setAircraftAssignment(token, selected.id, userId, assignmentAccess))) {
+                  setAssignmentUserId('');
+                }
               }}>
-                <label><span>Account</span><select value={assignmentUserId} onChange={(event) => setAssignmentUserId(event.target.value)} required><option value="">Select account</option>{users.filter((user) => user.is_active).map((user) => <option key={user.id} value={user.id}>{user.display_name} ({user.username})</option>)}</select></label>
-                <label><span>Access</span><select value={assignmentAccess} onChange={(event) => setAssignmentAccess(event.target.value as AircraftAccessLevel)}>{ACCESS_LEVELS.map((level) => <option value={level} key={level}>{titleCase(level)}</option>)}</select></label>
-                <button className="button secondary-button" type="submit" disabled={busy}>Save assignment</button>
+                <label><span>Account</span><select value={assignmentUserId} onChange={(event) => {
+                  const userId = Number(event.target.value);
+                  setAssignmentUserId(event.target.value);
+                  const account = users.find((user) => user.id === userId);
+                  if (account) setAssignmentAccess(suggestedFleetAccess(account));
+                }} required><option value="">Select account</option>{users.filter((user) => user.is_active).map((user) => <option key={user.id} value={user.id}>{user.display_name} ({user.username}) - {user.roles.join(', ') || 'No account role'}</option>)}</select></label>
+                <label><span>Fleet role</span><select value={assignmentAccess} onChange={(event) => setAssignmentAccess(event.target.value as AircraftAccessLevel)} aria-describedby="aircraft-access-help">{fleetRoleOptions.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select></label>
+                <button className="button secondary-button" type="submit" disabled={busy || !assignmentUserId}>Assign aircraft</button>
               </form>
+              <p className="assignment-access-help" id="aircraft-access-help">
+                The Fleet role follows People and roles: Operator manages and operates the aircraft,
+                Maintainer can manage it, and Viewer has read-only access. Selecting an account proposes
+                the matching role automatically; an administrator can change it before assignment.
+              </p>
               <div className="assignment-list">
-                {assignments.map((assignment) => <div key={assignment.user_id}><span><strong>{assignment.display_name}</strong><small>@{assignment.username}</small></span><span>{titleCase(assignment.access_level)}</span><button className="text-button danger-text" type="button" disabled={busy} onClick={async () => mutate('Aircraft assignment removed.', () => removeAircraftAssignment(token, selected.id, assignment.user_id))}>Remove</button></div>)}
+                {assignments.map((assignment) => <div key={assignment.user_id}><span><strong>{assignment.display_name}</strong><small>@{assignment.username}</small></span><span>{fleetRoleLabel(assignment.access_level)}</span><button className="text-button danger-text" type="button" disabled={busy} onClick={async () => mutate('Aircraft assignment removed.', () => removeAircraftAssignment(token, selected.id, assignment.user_id))}>Remove</button></div>)}
                 {!assignments.length && <p className="empty-copy">No accounts are assigned to this aircraft.</p>}
               </div>
             </section>}
@@ -347,6 +404,7 @@ function AccountsPanel({ token, currentUser, users, roles, busy, runAction, refr
   const [username, setUsername] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [password, setPassword] = useState('');
+  const [createUserError, setCreateUserError] = useState('');
   const [newUserRoles, setNewUserRoles] = useState<string[]>(['Viewer']);
   const [roleName, setRoleName] = useState('');
   const [roleDescription, setRoleDescription] = useState('');
@@ -385,6 +443,12 @@ function AccountsPanel({ token, currentUser, users, roles, busy, runAction, refr
         <div className="workspace-section-heading"><div><p className="section-kicker">Account directory</p><h3 id="users-title">Users</h3></div><span>{users.length} accounts</span></div>
         <form className="entity-form create-user-form" onSubmit={async (event) => {
           event.preventDefault();
+          const validationError = validateNewAccount(username, displayName, password);
+          if (validationError) {
+            setCreateUserError(validationError);
+            return;
+          }
+          setCreateUserError('');
           const saved = await runAction('User account created.', () => createUser(token, { username, display_name: displayName, password, roles: newUserRoles }));
           if (saved) {
             setUsername(''); setDisplayName(''); setPassword(''); setNewUserRoles(['Viewer']);
@@ -392,8 +456,9 @@ function AccountsPanel({ token, currentUser, users, roles, busy, runAction, refr
           }
         }}>
           <h4>Create account</h4>
-          <div className="form-grid"><label><span>Username</span><input value={username} onChange={(event) => setUsername(event.target.value)} required /></label><label><span>Display name</span><input value={displayName} onChange={(event) => setDisplayName(event.target.value)} required /></label><label><span>Initial password</span><input type="password" autoComplete="new-password" minLength={12} value={password} onChange={(event) => setPassword(event.target.value)} required /></label></div>
-          <fieldset className="role-checks"><legend>Initial roles</legend>{roles.map((role) => <label key={role.id}><input type="checkbox" checked={newUserRoles.includes(role.name)} onChange={(event) => setNewUserRoles((current) => event.target.checked ? [...current, role.name] : current.filter((name) => name !== role.name))} /><span>{role.name}</span></label>)}</fieldset>
+          {createUserError && <p className="workspace-message error" role="alert">{createUserError}</p>}
+          <div className="form-grid"><label><span>Username</span><input value={username} onChange={(event) => { setUsername(event.target.value); setCreateUserError(''); }} minLength={3} maxLength={64} pattern="[A-Za-z0-9][A-Za-z0-9._-]*" placeholder="operator1" autoComplete="username" aria-describedby="account-username-help" required /><small id="account-username-help">3–64 characters; ASCII letters, digits, dots, underscores or hyphens.</small></label><label><span>Display name</span><input value={displayName} onChange={(event) => { setDisplayName(event.target.value); setCreateUserError(''); }} maxLength={100} placeholder="Flight Operator" autoComplete="name" required /></label><label><span>Initial password</span><input type="password" autoComplete="new-password" minLength={12} maxLength={128} value={password} onChange={(event) => { setPassword(event.target.value); setCreateUserError(''); }} aria-describedby="account-password-help" required /><small id="account-password-help">12–128 characters; include at least 3 of: lowercase, uppercase, digits, symbols.</small></label></div>
+          <fieldset className="role-checks"><legend>Initial account roles</legend>{roles.map((role) => <label key={role.id} title={role.description}><input type="checkbox" checked={newUserRoles.includes(role.name)} onChange={(event) => setNewUserRoles((current) => event.target.checked ? [...current, role.name] : current.filter((name) => name !== role.name))} /><span>{role.name}</span></label>)}</fieldset>
           <button className="button primary-button" type="submit" disabled={busy || newUserRoles.length === 0}>Create account</button>
         </form>
         {permissionLoadFailed && <p className="workspace-message error" role="status">Some map permissions couldn't be loaded.</p>}
@@ -450,12 +515,8 @@ function AuthenticatedWorkspace({ session, runs, onSignedOut }: { session: Acces
   const isAdmin = hasRole(currentUser, 'Admin');
 
   const handleRequestError = useCallback((requestError: unknown) => {
-    if (requestError instanceof ApiError && requestError.status === 401) {
-      onSignedOut();
-      return;
-    }
     setError(readableError(requestError));
-  }, [onSignedOut]);
+  }, []);
 
   const refreshFleet = useCallback(async (signal?: AbortSignal) => {
     setAircraft(await getAircraft(session.token, signal));
@@ -490,10 +551,15 @@ function AuthenticatedWorkspace({ session, runs, onSignedOut }: { session: Acces
       setRoles(nextRoles);
       setAudit(nextAudit);
     }).catch((requestError: unknown) => {
-      if (!(requestError instanceof DOMException && requestError.name === 'AbortError')) handleRequestError(requestError);
+      if (requestError instanceof DOMException && requestError.name === 'AbortError') return;
+      if (requestError instanceof ApiError && requestError.status === 401) {
+        onSignedOut();
+        return;
+      }
+      handleRequestError(requestError);
     }).finally(() => setLoading(false));
     return () => controller.abort();
-  }, [handleRequestError, isAdmin, session.token]);
+  }, [handleRequestError, isAdmin, onSignedOut, session.token]);
 
   const runAction = useCallback(async (successMessage: string, action: () => Promise<unknown>) => {
     setBusy(true);

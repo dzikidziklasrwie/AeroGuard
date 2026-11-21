@@ -311,4 +311,5 @@ INSERT OR IGNORE INTO roles (name, description, is_system, created_at_utc)
 VALUES
     ('Admin', 'Manages accounts, roles, aircraft, and assignments.', 1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     ('Operator', 'Creates aircraft and updates assigned aircraft.', 1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    ('Maintainer', 'Operates and maintains assigned aircraft.', 1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     ('Viewer', 'Reads aircraft assigned to the account.', 1, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));

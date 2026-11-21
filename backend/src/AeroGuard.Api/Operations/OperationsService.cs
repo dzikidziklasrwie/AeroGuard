@@ -83,7 +83,7 @@ public sealed class OperationsService(
             isAdmin,
             cancellationToken)
             ?? throw ApiProblemException.NotFound("The aircraft does not exist or is not assigned to this account.");
-        RequireOwnerOrAdmin(actor, aircraft.CurrentUserAccess, "Only an owner can place this aircraft on the map.");
+        RequireManagerOrAdmin(actor, aircraft.CurrentUserAccess, "Only an owner or maintainer can place this aircraft on the map.");
         if (!string.Equals(aircraft.Status, "ACTIVE", StringComparison.Ordinal))
         {
             throw ApiProblemException.Conflict("Set the aircraft status to ACTIVE before placing it on the map.");
@@ -179,7 +179,7 @@ public sealed class OperationsService(
             cancellationToken);
         RequirePermission(isAdmin, permissions, OperationPermissionNames.FlightReconfigureOwn);
         var current = await RequireVisibleFlightAsync(actor, flightId, cancellationToken);
-        RequireOwnerOrAdmin(actor, current.CurrentUserAccess, "Only an owner can reconfigure this flight.");
+        RequireManagerOrAdmin(actor, current.CurrentUserAccess, "Only an owner or maintainer can reconfigure this flight.");
         if (request.AircraftId != current.AircraftId)
         {
             throw ApiProblemException.Validation(
@@ -255,6 +255,31 @@ public sealed class OperationsService(
         return snapshot;
     }
 
+    public async Task<FlightDto> ChangeFlightScenarioAsync(
+        CurrentUser actor,
+        long flightId,
+        ChangeFlightScenarioRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(actor);
+        ArgumentNullException.ThrowIfNull(request);
+        var current = await RequireVisibleFlightAsync(actor, flightId, cancellationToken);
+        var position = FlightMotion.Calculate(current, timeProvider.GetUtcNow());
+        return await UpdateFlightAsync(
+            actor,
+            flightId,
+            new UpdateFlightRequest(
+                current.AircraftId,
+                request.RunId,
+                current.ScopeType,
+                current.ScopeCode,
+                position.Latitude,
+                position.Longitude,
+                current.SpeedKph,
+                request.ExpectedVersion),
+            cancellationToken);
+    }
+
     public async Task RemoveFlightAsync(
         CurrentUser actor,
         long flightId,
@@ -268,7 +293,7 @@ public sealed class OperationsService(
             cancellationToken);
         RequirePermission(isAdmin, permissions, OperationPermissionNames.FlightRemoveOwn);
         var flight = await RequireVisibleFlightAsync(actor, flightId, cancellationToken);
-        RequireOwnerOrAdmin(actor, flight.CurrentUserAccess, "Only an owner can remove this flight from the map.");
+        RequireManagerOrAdmin(actor, flight.CurrentUserAccess, "Only an owner or maintainer can remove this flight from the map.");
         var recipients = await operationsRepository.GetAssignedUserIdsAsync(
             flightId,
             cancellationToken);
@@ -356,7 +381,7 @@ public sealed class OperationsService(
         else if (shareType == FlightShareTypes.Telemetry)
         {
             RequirePermission(isAdmin, permissions, OperationPermissionNames.TelemetryShare);
-            RequireOwnerOrAdmin(actor, flight.CurrentUserAccess, "Only an owner can share live telemetry.");
+            RequireManagerOrAdmin(actor, flight.CurrentUserAccess, "Only an owner or maintainer can share live telemetry.");
             payload = new
             {
                 snapshot.Condition,
@@ -496,13 +521,13 @@ public sealed class OperationsService(
         return new ValidatedRoute(scopeType, scopeCode, latitude, longitude, speedKph);
     }
 
-    private static void RequireOwnerOrAdmin(
+    private static void RequireManagerOrAdmin(
         CurrentUser actor,
         string? currentUserAccess,
         string detail)
     {
         if (!actor.IsInRole(BuiltInRoles.Admin)
-            && currentUserAccess != AircraftAccessLevels.Owner)
+            && currentUserAccess is not (AircraftAccessLevels.Owner or AircraftAccessLevels.Maintainer))
         {
             throw ApiProblemException.Forbidden(detail);
         }

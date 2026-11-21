@@ -95,6 +95,13 @@ describe('AeroGuard dashboard', () => {
       created_at_utc: '2030-01-01T08:00:00Z',
       updated_at_utc: '2030-01-01T08:00:00Z',
     };
+    const operator = {
+      ...admin,
+      id: 2,
+      username: 'operator1',
+      display_name: 'Flight Operator',
+      roles: ['Operator'],
+    };
     const aircraft = [{
       id: 9,
       tail_number: 'N204AG',
@@ -111,7 +118,15 @@ describe('AeroGuard dashboard', () => {
     const apiManifest = {
       ...manifestFixture,
       generated_by: 'AeroGuard REST API',
-      scenarios: [{ ...manifestFixture.scenarios[0], file: '/api/runs/11/replay' }],
+      scenarios: [
+        { ...manifestFixture.scenarios[0], file: '/api/runs/11/replay' },
+        {
+          ...manifestFixture.scenarios[0],
+          id: 'communication-interruption',
+          label: 'Communication interruption',
+          file: '/api/runs/12/replay',
+        },
+      ],
     };
     const fetchMock = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => {
       const url = String(input);
@@ -127,16 +142,25 @@ describe('AeroGuard dashboard', () => {
         record_count: 74,
         replay_url: '/api/runs/11/replay',
       }]));
-      if (url === '/api/runs/11/replay') return Promise.resolve(response(jsonlFixture));
+      if (url === '/api/runs/11/replay' || url === '/api/runs/12/replay') return Promise.resolve(response(jsonlFixture));
       if (url === '/api/auth/login') return Promise.resolve(response({ access_token: 'opaque-session', token_type: 'Bearer', expires_at_utc: '2030-01-01T12:00:00Z', user: admin }));
       if (url === '/api/auth/me') return Promise.resolve(response(admin));
       if (url === '/api/aircraft') return Promise.resolve(response(aircraft));
       if (url === '/api/operations/flights') return Promise.resolve(response([]));
       if (url === '/api/operations/permissions') return Promise.resolve(response({ permissions: ['FLIGHT_PLACE_OWN', 'CHAT_SEND'] }));
-      if (url === '/api/admin/users') return Promise.resolve(response([admin]));
+      if (url === '/api/admin/users') return Promise.resolve(response([admin, operator]));
       if (url === '/api/admin/roles') return Promise.resolve(response([{ id: 1, name: 'Admin', description: 'Full administration access', is_system: true, user_count: 1, created_at_utc: '2030-01-01T08:00:00Z' }]));
       if (url === '/api/admin/users/1/permissions' && _init?.method === 'PUT') return Promise.resolve(response({ permissions: JSON.parse(String(_init.body)).permissions }));
       if (url === '/api/admin/users/1/permissions') return Promise.resolve(response({ permissions: ['FLIGHT_PLACE_OWN', 'CHAT_SEND'] }));
+      if (url === '/api/aircraft/9/assignments/2' && _init?.method === 'PUT') return Promise.resolve(response({
+        aircraft_id: 9,
+        user_id: 2,
+        username: operator.username,
+        display_name: operator.display_name,
+        access_level: JSON.parse(String(_init.body)).access_level,
+        assigned_by: 1,
+        assigned_at_utc: '2030-01-01T09:00:00Z',
+      }));
       if (url === '/api/admin/audit?limit=50' || url === '/api/aircraft/9/assignments') return Promise.resolve(response([]));
       return Promise.resolve(response('', 404));
     });
@@ -148,16 +172,29 @@ describe('AeroGuard dashboard', () => {
     await user.type(screen.getByLabelText('Password'), 'correct-password');
     await user.click(screen.getByRole('button', { name: 'Sign in' }));
 
-    expect(await screen.findByRole('heading', { name: 'Simulated operations map' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Simulated operations map' }, { timeout: 5_000 })).toBeInTheDocument();
     expect(screen.getByText('Simulation only')).toBeInTheDocument();
+    expect(screen.getByText(/Signed in as admin/)).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText('Public replay scenario'), 'communication-interruption');
+    expect(screen.getByText(/Signed in as admin/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText('Public replay scenario')).toHaveValue('communication-interruption'));
     await user.click(screen.getByRole('button', { name: 'Fleet' }));
     expect(await screen.findByRole('heading', { name: '1 visible aircraft' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Test aircraft 01' })).toBeInTheDocument();
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Account' }), '2');
+    expect(screen.getByRole('combobox', { name: 'Fleet role' })).toHaveValue('OWNER');
+    expect(screen.getByRole('option', { name: 'Operator' })).toHaveValue('OWNER');
+    await user.click(screen.getByRole('button', { name: 'Assign aircraft' }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/aircraft/9/assignments/2', expect.objectContaining({
+      method: 'PUT',
+      body: JSON.stringify({ access_level: 'OWNER' }),
+    })));
     await user.click(screen.getByRole('button', { name: 'People and roles' }));
     expect(screen.getByRole('heading', { name: 'Users' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Roles' })).toBeInTheDocument();
-    await user.click(await screen.findByRole('checkbox', { name: 'Share telemetry' }));
-    await user.click(screen.getByRole('button', { name: 'Save map access' }));
+    await user.click((await screen.findAllByRole('checkbox', { name: 'Share telemetry' }))[0]);
+    await user.click(screen.getAllByRole('button', { name: 'Save map access' })[0]);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/admin/users/1/permissions', expect.objectContaining({
       method: 'PUT',
       body: JSON.stringify({ permissions: ['FLIGHT_PLACE_OWN', 'CHAT_SEND', 'TELEMETRY_SHARE'] }),

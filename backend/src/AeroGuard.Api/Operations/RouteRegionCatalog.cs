@@ -8,9 +8,19 @@ public sealed record RouteRegionProfile(
     double LatitudeRadius,
     double LongitudeRadius)
 {
-    public double EntryLatitude => CenterLatitude;
+    public (double Latitude, double Longitude) EntryPoint()
+    {
+        for (var fraction = 1.0; fraction >= 0.0001; fraction *= 0.5)
+        {
+            var longitude = CenterLongitude + (LongitudeRadius * fraction);
+            if (Contains(CenterLatitude, longitude))
+            {
+                return (CenterLatitude, longitude);
+            }
+        }
 
-    public double EntryLongitude => CenterLongitude + LongitudeRadius;
+        return (CenterLatitude, CenterLongitude);
+    }
 
     public bool Contains(double latitude, double longitude, double tolerance = 1e-9)
     {
@@ -26,8 +36,7 @@ public sealed record RouteRegionProfile(
                 latitude,
                 longitude,
                 polygon,
-                CenterLongitude,
-                tolerance);
+                CenterLongitude);
         }
 
         var latitudeOffset = (latitude - CenterLatitude) / LatitudeRadius;
@@ -211,8 +220,7 @@ public static class RouteRegionCatalog
         double latitude,
         double longitude,
         IReadOnlyList<(double Latitude, double Longitude)> polygon,
-        double referenceLongitude,
-        double tolerance)
+        double referenceLongitude)
     {
         var normalizedLongitude = NormalizeLongitudeForPolygon(longitude, referenceLongitude);
         var inside = false;
@@ -222,7 +230,7 @@ public static class RouteRegionCatalog
             var end = polygon[(index + 1) % polygon.Count];
             var startLongitude = NormalizeLongitudeForPolygon(start.Longitude, referenceLongitude);
             var endLongitude = NormalizeLongitudeForPolygon(end.Longitude, referenceLongitude);
-            var crosses = (startLatitude(start) > latitude) != (startLatitude(end) > latitude);
+            var crosses = (start.Latitude > latitude) != (end.Latitude > latitude);
             if (crosses)
             {
                 var intersection = ((endLongitude - startLongitude)
@@ -238,8 +246,6 @@ public static class RouteRegionCatalog
 
         return inside;
     }
-
-    private static double startLatitude((double Latitude, double Longitude) point) => point.Latitude;
 
     private static double NormalizeLongitudeForPolygon(double longitude, double reference)
     {

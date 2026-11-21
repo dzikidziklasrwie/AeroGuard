@@ -59,6 +59,10 @@ public sealed record UpdateFlightRequest(
     double SpeedKph,
     long ExpectedVersion);
 
+public sealed record ChangeFlightScenarioRequest(
+    long RunId,
+    long ExpectedVersion);
+
 public sealed record SendFlightMessageRequest(
     string? Message,
     string ShareType);
