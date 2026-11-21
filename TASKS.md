@@ -11,7 +11,7 @@ Snapshot date: 2026-11-21
 |---|---|---|
 | C++20 core, simulation, seven scenarios, and CLI | Complete in worktree | Clean MSVC and GCC builds with warnings as errors |
 | GoogleTest and CLI suite | 37 discovered GoogleTests plus 8 CLI CTests | Current local suite passed 45/45; previous revision passed 44/44 on MSVC, GCC, and GCC with ASan/UBSan |
-| React replay and operations dashboard | Recorded replay, packaged world map, route phase/progress, zoom and pan, flight chat, permission-aware controls, SignalR client, and REST fallback | ESLint, typecheck, 42/42 Vitest tests in 10 files, Vite build, and npm audit passed |
+| React replay and operations dashboard | Recorded replay, packaged world map, route phase/progress, zoom and pan, flight chat, permission-aware controls, scenario-linked aircraft effects, SignalR client, and REST fallback | ESLint, typecheck, Vitest suite, Vite build, and npm audit passed |
 | JSONL/manifest producer-consumer contract | C++ export, seven authentic replays, parser, and manifest | All seven generated files loaded without parser warnings |
 | ASP.NET Core API, SQLite, accounts, fleet, and simulated operations | Minimal API, archive importer, bearer sessions, assignments, destination routing, operation permissions, active flights, chat, session-aware SignalR delivery, and audit records | Current xUnit suite passed 63/63 |
 | Documentation and CV material | User manual, requirements, design, build, tests, trade-offs, interview notes, and measured CV copy | Cross-checked against the current code and results |
@@ -43,6 +43,8 @@ Snapshot date: 2026-11-21
 - [x] Per-flight broadcast failure isolation and stale live-event rejection.
 - [x] Coordinate validation, bounded route motion, sphere-clipped aircraft
   layer, and inward-facing edge labels.
+- [x] Always-visible tail-number aircraft markers, stable silhouette, fading
+  contrails, scenario-specific fault animations, and land/water impact states.
 - [x] Continent-as-destination routing, great-circle `TRANSIT` capped at 30
   seconds, bounded `PATROL`, route progress, and local country patrols.
 - [x] Display bounds of latitude -82 to 82 and longitude -176 to 176, plus

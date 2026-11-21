@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AircraftRecord, FlightRecord, UserAccount } from '../api/types';
 import type { RunArchiveEntry } from '../types';
-import { OperationsMap } from './OperationsMap';
+import { getMapScenarioEffect, OperationsMap } from './OperationsMap';
 
 const hubMocks = vi.hoisted(() => ({
   connect: vi.fn().mockResolvedValue(async () => undefined),
@@ -130,6 +130,23 @@ describe('OperationsMap', () => {
   beforeEach(() => {
     hubMocks.connect.mockClear();
     hubMocks.connect.mockResolvedValue(async () => undefined);
+  });
+
+  it('maps each scenario to a deterministic visual effect', () => {
+    expect(getMapScenarioEffect({ ...flight, scenario: 'normal-operation', scenario_elapsed_ms: 20_000 }))
+      .toBe('none');
+    expect(getMapScenarioEffect({ ...flight, scenario: 'communication-interruption', scenario_elapsed_ms: 15_000 }))
+      .toBe('communication');
+    expect(getMapScenarioEffect({ ...flight, scenario: 'invalid-sensor-data', scenario_elapsed_ms: 15_000 }))
+      .toBe('sensor');
+    expect(getMapScenarioEffect({ ...flight, scenario: 'power-fluctuations', scenario_elapsed_ms: 15_000 }))
+      .toBe('power');
+    expect(getMapScenarioEffect({ ...flight, scenario: 'multiple-subsystem-failures', scenario_elapsed_ms: 20_000 }))
+      .toBe('multiple');
+    expect(getMapScenarioEffect({ ...flight, scenario: 'recovery-after-temporary-failure', scenario_elapsed_ms: 15_000 }))
+      .toBe('recovery');
+    expect(getMapScenarioEffect({ ...flight, scenario: 'simulated-overheating', scenario_elapsed_ms: 15_000 }))
+      .toBe('overheating');
   });
 
   it('renders published world geometry and exposes selectable simulated aircraft', async () => {

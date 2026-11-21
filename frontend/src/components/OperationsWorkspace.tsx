@@ -483,12 +483,8 @@ function AuthenticatedWorkspace({ session, runs, onSignedOut }: { session: Acces
   const isAdmin = hasRole(currentUser, 'Admin');
 
   const handleRequestError = useCallback((requestError: unknown) => {
-    if (requestError instanceof ApiError && requestError.status === 401) {
-      onSignedOut();
-      return;
-    }
     setError(readableError(requestError));
-  }, [onSignedOut]);
+  }, []);
 
   const refreshFleet = useCallback(async (signal?: AbortSignal) => {
     setAircraft(await getAircraft(session.token, signal));
@@ -523,10 +519,15 @@ function AuthenticatedWorkspace({ session, runs, onSignedOut }: { session: Acces
       setRoles(nextRoles);
       setAudit(nextAudit);
     }).catch((requestError: unknown) => {
-      if (!(requestError instanceof DOMException && requestError.name === 'AbortError')) handleRequestError(requestError);
+      if (requestError instanceof DOMException && requestError.name === 'AbortError') return;
+      if (requestError instanceof ApiError && requestError.status === 401) {
+        onSignedOut();
+        return;
+      }
+      handleRequestError(requestError);
     }).finally(() => setLoading(false));
     return () => controller.abort();
-  }, [handleRequestError, isAdmin, session.token]);
+  }, [handleRequestError, isAdmin, onSignedOut, session.token]);
 
   const runAction = useCallback(async (successMessage: string, action: () => Promise<unknown>) => {
     setBusy(true);
