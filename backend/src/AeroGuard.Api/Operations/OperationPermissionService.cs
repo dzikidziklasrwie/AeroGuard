@@ -97,13 +97,14 @@ public sealed class OperationPermissionService(
 
         var defaults = new HashSet<string>(StringComparer.Ordinal);
         var isOperator = roles.Contains(BuiltInRoles.Operator, StringComparer.OrdinalIgnoreCase);
+        var isMaintainer = roles.Contains(BuiltInRoles.Maintainer, StringComparer.OrdinalIgnoreCase);
         var isViewer = roles.Contains(BuiltInRoles.Viewer, StringComparer.OrdinalIgnoreCase);
-        if (isOperator || isViewer)
+        if (isOperator || isMaintainer || isViewer)
         {
             defaults.Add(OperationPermissionNames.ChatSend);
         }
 
-        if (isOperator)
+        if (isOperator || isMaintainer)
         {
             defaults.Add(OperationPermissionNames.FlightPlaceOwn);
             defaults.Add(OperationPermissionNames.FlightRemoveOwn);

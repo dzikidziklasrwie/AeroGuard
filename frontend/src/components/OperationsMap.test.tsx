@@ -360,6 +360,29 @@ describe('OperationsMap', () => {
     expect(await screen.findByText('Flight started in transit to Poland.')).toBeInTheDocument();
   });
 
+  it('keeps the session active when changing a flight route returns 401', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === '/api/operations/flights') return Promise.resolve(response([flight]));
+      if (url === '/api/operations/permissions') return Promise.resolve(response(['FLIGHT_RECONFIGURE_OWN']));
+      if (/^\/api\/operations\/flights\/\d+\/messages/.test(url)) return Promise.resolve(response([]));
+      if (url === '/api/operations/flights/44' && init?.method === 'PUT') {
+        return Promise.resolve(response({ detail: 'Permission changed.' }, 401));
+      }
+      return Promise.resolve(response({}, 404));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const onUnauthorized = vi.fn();
+    const user = userEvent.setup();
+    render(<OperationsMap token="session-token" currentUser={owner} aircraft={aircraft} runs={runs} onUnauthorized={onUnauthorized} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Move aircraft' }));
+    await user.click(screen.getByRole('button', { name: 'Save position' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('You no longer have permission to change this flight.');
+    expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+
   it('gates chat controls by permission and posts the selected share type', async () => {
     const fetchMock = apiMock({ permissions: ['CHAT_SEND', 'TELEMETRY_SHARE'] });
     vi.stubGlobal('fetch', fetchMock);
