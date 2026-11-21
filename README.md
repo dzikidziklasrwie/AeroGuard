@@ -88,13 +88,13 @@ Observed locally on 2026-11-21:
 | React / TypeScript | `npm ci`, lint, typecheck, 47/47 Vitest tests in 10 files, and production build passed |
 | Dependency audit | 0 known npm vulnerabilities reported |
 | Current Docker/browser path | API and dashboard images built; Compose reported both services healthy; Chrome completed the nginx WebSocket handshake and received four SignalR frames |
-| Previous hosted revision | GitHub Actions passed MSVC, GCC, ASan/UBSan, clang-tidy, frontend, API, and Docker jobs on the preceding `main` revision |
+| Current implementation revision | GitHub Actions passed MSVC, GCC, ASan/UBSan, clang-tidy, frontend, API, and Docker jobs |
 
 GitHub Actions run
-[`44814478366`](https://github.com/dzikidziklasrwie/AeroGuard/actions/runs/44814478366)
-passed all seven jobs on merge commit `fe2632a`. The destination-routing,
-viewport, and work-reduction changes described here have local evidence; no
-hosted result is claimed for the current worktree. The automated suites
+[`44854113152`](https://github.com/dzikidziklasrwie/AeroGuard/actions/runs/44854113152)
+passed all seven jobs on implementation commit `47d38c5`, including the
+destination routing, viewport, per-aircraft scenario, and work-reduction
+changes described here. The automated suites
 negotiate SignalR but don't connect a real WebSocket client end to end; the
 browser, nginx WebSocket, and Docker network path passed a separate local
 check. We don't claim a coverage percentage. The process-local connection
