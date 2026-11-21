@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Icon } from './components/Icons';
 import { OperationsWorkspace } from './components/OperationsWorkspace';
 import { RunArchive } from './components/RunArchive';
@@ -29,6 +29,14 @@ type LoadState<T> =
 
 type TimelineRecord = EventRecord | StateTransitionRecord;
 
+interface ReplayView {
+  telemetry: TelemetryRecord[];
+  transitions: StateTransitionRecord[];
+  timeline: TimelineRecord[];
+  latest: Map<string, TelemetryRecord>;
+  telemetryBySubsystem: Map<string, TelemetryRecord[]>;
+}
+
 const SUBSYSTEM_ICONS = {
   power: 'power',
   cooling: 'cooling',
@@ -38,19 +46,54 @@ const SUBSYSTEM_ICONS = {
   equipment: 'equipment',
 } as const;
 
+const EMPTY_TELEMETRY: TelemetryRecord[] = [];
+
 function dataFilePath(file: string): string {
   if (/^(?:https?:)?\//.test(file)) return file;
   return `/data/${file.replace(/^\.\//, '')}`;
 }
 
-function latestTelemetryBySubsystem(records: TelemetryRecord[]): Map<string, TelemetryRecord> {
-  const latest = new Map<string, TelemetryRecord>();
-  records.forEach((record) => latest.set(record.subsystem, record));
-  return latest;
-}
-
 function currentRecordedState(records: StateTransitionRecord[]): SystemState {
   return records.at(-1)?.to ?? 'INITIALIZING';
+}
+
+function visibleRecordCount(dataset: SimulationDataset, elapsedMs: number): number {
+  let lower = 0;
+  let upper = dataset.records.length;
+  while (lower < upper) {
+    const middle = lower + Math.floor((upper - lower) / 2);
+    if (dataset.records[middle].timestamp_ms <= elapsedMs) lower = middle + 1;
+    else upper = middle;
+  }
+  return lower;
+}
+
+function buildReplayView(dataset: SimulationDataset | undefined, elapsedMs: number): ReplayView {
+  const telemetry: TelemetryRecord[] = [];
+  const transitions: StateTransitionRecord[] = [];
+  const timeline: TimelineRecord[] = [];
+  const latest = new Map<string, TelemetryRecord>();
+  const telemetryBySubsystem = new Map<string, TelemetryRecord[]>();
+  if (!dataset) return { telemetry, transitions, timeline, latest, telemetryBySubsystem };
+
+  const limit = visibleRecordCount(dataset, elapsedMs);
+  for (let index = 0; index < limit; index += 1) {
+    const record = dataset.records[index];
+    if (record.record_type === 'telemetry') {
+      telemetry.push(record);
+      latest.set(record.subsystem, record);
+      const history = telemetryBySubsystem.get(record.subsystem);
+      if (history) history.push(record);
+      else telemetryBySubsystem.set(record.subsystem, [record]);
+    } else if (record.record_type === 'state_transition') {
+      transitions.push(record);
+      timeline.push(record);
+    } else if (record.record_type === 'event') {
+      timeline.push(record);
+    }
+  }
+
+  return { telemetry, transitions, timeline, latest, telemetryBySubsystem };
 }
 
 function MiniSparkline({ records }: { records: TelemetryRecord[] }) {
@@ -180,7 +223,7 @@ function Timeline({ records, subsystems }: { records: TimelineRecord[]; subsyste
   );
 }
 
-function Statistics({ dataset }: { dataset: SimulationDataset }) {
+const Statistics = memo(function Statistics({ dataset }: { dataset: SimulationDataset }) {
   const summary = dataset.summary;
   const telemetryCount = dataset.records.filter((record) => record.record_type === 'telemetry').length;
   const transitionCount = dataset.records.filter((record) => record.record_type === 'state_transition').length;
@@ -203,7 +246,7 @@ function Statistics({ dataset }: { dataset: SimulationDataset }) {
       </div>
     </section>
   );
-}
+});
 
 function ArchitectureOverview() {
   const stages = [
@@ -301,23 +344,11 @@ export default function App() {
   const durationMs = dataset?.metadata.duration_ms ?? 0;
   const playback = usePlayback(durationMs, scenario?.file ?? selectedScenario);
 
-  const visibleRecords = useMemo(
-    () => dataset?.records.filter((record) => record.timestamp_ms <= playback.elapsedMs) ?? [],
+  const replayView = useMemo(
+    () => buildReplayView(dataset, playback.elapsedMs),
     [dataset, playback.elapsedMs],
   );
-  const telemetry = useMemo(
-    () => visibleRecords.filter((record): record is TelemetryRecord => record.record_type === 'telemetry'),
-    [visibleRecords],
-  );
-  const transitions = useMemo(
-    () => visibleRecords.filter((record): record is StateTransitionRecord => record.record_type === 'state_transition'),
-    [visibleRecords],
-  );
-  const timelineRecords = useMemo(
-    () => visibleRecords.filter((record): record is TimelineRecord => record.record_type === 'event' || record.record_type === 'state_transition'),
-    [visibleRecords],
-  );
-  const latest = useMemo(() => latestTelemetryBySubsystem(telemetry), [telemetry]);
+  const { telemetry, transitions, timeline: timelineRecords, latest, telemetryBySubsystem } = replayView;
   const systemState = currentRecordedState(transitions);
   const subsystems = useMemo(
     () => dataset?.metadata.subsystems.length ? dataset.metadata.subsystems : [...SUBSYSTEM_IDS],
@@ -456,7 +487,7 @@ export default function App() {
                       key={subsystem}
                       subsystem={subsystem}
                       latest={latest.get(subsystem)}
-                      history={telemetry.filter((record) => record.subsystem === subsystem)}
+                      history={telemetryBySubsystem.get(subsystem) ?? EMPTY_TELEMETRY}
                     />)}
                   </div>
                 </section>
@@ -473,7 +504,7 @@ export default function App() {
                       >{SUBSYSTEM_LABELS[subsystem]?.split(' ')[0] ?? titleCase(subsystem)}</button>)}
                     </div>
                     <TelemetryChart
-                      records={telemetry.filter((record) => record.subsystem === displayedChartSubsystem)}
+                      records={telemetryBySubsystem.get(displayedChartSubsystem) ?? EMPTY_TELEMETRY}
                       subsystem={displayedChartSubsystem}
                       durationMs={durationMs}
                     />

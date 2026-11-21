@@ -17,12 +17,21 @@ public sealed class OperationsBroadcaster(
 
     public async Task BroadcastAllAsync(CancellationToken cancellationToken = default)
     {
+        if (!connections.HasConnections)
+        {
+            return;
+        }
+
+        var administrators = await GetAdministratorIdsAsync(cancellationToken);
         var flights = await operationsRepository.GetAllFlightsAsync(cancellationToken);
         foreach (var flight in flights)
         {
             try
             {
-                await BroadcastFlightAsync(flight, cancellationToken);
+                await BroadcastFlightCoreAsync(
+                    flight,
+                    administrators,
+                    cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -42,35 +51,71 @@ public sealed class OperationsBroadcaster(
         FlightRecord flight,
         CancellationToken cancellationToken = default)
     {
-        var eventSequence = NextEventSequence();
-        var adminSnapshot = await snapshotFactory.CreateAsync(
-            flight,
-            OperationPermissionNames.All,
-            true,
-            cancellationToken) with
+        if (!connections.HasConnections)
         {
-            EventSequence = eventSequence,
-        };
-        var administrators = await GetAdministratorIdsAsync(cancellationToken);
-        var administratorConnections = await connections.GetActiveConnectionIdsAsync(
-            administrators,
-            cancellationToken);
-        await hub.Clients
-            .Clients(administratorConnections)
-            .SendAsync("flight_updated", adminSnapshot, cancellationToken);
+            return;
+        }
 
-        var userIds = await operationsRepository.GetAssignedUserIdsAsync(
+        var administrators = await GetAdministratorIdsAsync(cancellationToken);
+        await BroadcastFlightCoreAsync(flight, administrators, cancellationToken);
+    }
+
+    private async Task BroadcastFlightCoreAsync(
+        FlightRecord flight,
+        IReadOnlyList<long> administrators,
+        CancellationToken cancellationToken)
+    {
+        var administratorIds = administrators.ToHashSet();
+        var assignedUserIds = await operationsRepository.GetAssignedUserIdsAsync(
             flight.Id,
             cancellationToken);
-        foreach (var userId in userIds)
+        var recipientIds = administrators
+            .Concat(assignedUserIds)
+            .Distinct()
+            .ToArray();
+        var activeConnections = await connections.GetActiveConnectionsAsync(
+            recipientIds,
+            cancellationToken);
+        if (activeConnections.Count == 0)
         {
-            var user = await identityRepository.GetUserAsync(userId, cancellationToken);
-            if (user is null || !user.IsActive)
+            return;
+        }
+
+        var connectionIdsByUser = activeConnections
+            .GroupBy(connection => connection.UserId)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Select(connection => connection.ConnectionId).ToArray());
+        var prepared = await snapshotFactory.PrepareAsync(flight, cancellationToken);
+        var eventSequence = NextEventSequence();
+
+        var administratorConnections = activeConnections
+            .Where(connection => administratorIds.Contains(connection.UserId))
+            .Select(connection => connection.ConnectionId)
+            .ToArray();
+        if (administratorConnections.Length > 0)
+        {
+            var adminSnapshot = FlightSnapshotFactory.Create(
+                flight,
+                prepared,
+                OperationPermissionNames.All,
+                true,
+                eventSequence);
+            await hub.Clients
+                .Clients(administratorConnections)
+                .SendAsync("flight_updated", adminSnapshot, cancellationToken);
+        }
+
+        foreach (var userId in assignedUserIds.Distinct())
+        {
+            if (administratorIds.Contains(userId)
+                || !connectionIdsByUser.TryGetValue(userId, out var userConnections))
             {
                 continue;
             }
 
-            if (user.Roles.Contains(BuiltInRoles.Admin, StringComparer.OrdinalIgnoreCase))
+            var user = await identityRepository.GetUserAsync(userId, cancellationToken);
+            if (user is null || !user.IsActive)
             {
                 continue;
             }
@@ -89,17 +134,12 @@ public sealed class OperationsBroadcaster(
                 userId,
                 user.Roles,
                 cancellationToken);
-            var snapshot = await snapshotFactory.CreateAsync(
+            var snapshot = FlightSnapshotFactory.Create(
                 visibleFlight,
+                prepared,
                 permissions,
                 false,
-                cancellationToken) with
-            {
-                EventSequence = eventSequence,
-            };
-            var userConnections = await connections.GetActiveConnectionIdsAsync(
-                [userId],
-                cancellationToken);
+                eventSequence);
             await hub.Clients
                 .Clients(userConnections)
                 .SendAsync("flight_updated", snapshot, cancellationToken);
@@ -111,6 +151,11 @@ public sealed class OperationsBroadcaster(
         IReadOnlyList<long> assignedUserIds,
         CancellationToken cancellationToken = default)
     {
+        if (!connections.HasConnections)
+        {
+            return;
+        }
+
         var payload = new { id = flightId, event_sequence = NextEventSequence() };
         var recipients = (await GetAdministratorIdsAsync(cancellationToken))
             .Concat(assignedUserIds)
@@ -129,6 +174,11 @@ public sealed class OperationsBroadcaster(
         IReadOnlyList<long> assignedUserIds,
         CancellationToken cancellationToken = default)
     {
+        if (!connections.HasConnections)
+        {
+            return;
+        }
+
         var recipients = (await GetAdministratorIdsAsync(cancellationToken))
             .Concat(assignedUserIds)
             .Distinct()
@@ -146,6 +196,11 @@ public sealed class OperationsBroadcaster(
         long userId,
         CancellationToken cancellationToken = default)
     {
+        if (!connections.HasConnections)
+        {
+            return;
+        }
+
         var recipientConnections = await connections.GetActiveConnectionIdsAsync(
             [userId],
             cancellationToken);
@@ -172,9 +227,7 @@ public sealed class OperationsBroadcaster(
 
     private async Task<IReadOnlyList<long>> GetAdministratorIdsAsync(
         CancellationToken cancellationToken) =>
-        (await identityRepository.GetUsersAsync(cancellationToken))
-        .Where(user => user.IsActive
-            && user.Roles.Contains(BuiltInRoles.Admin, StringComparer.OrdinalIgnoreCase))
-        .Select(user => user.Id)
-        .ToArray();
+        await identityRepository.GetActiveUserIdsInRoleAsync(
+            BuiltInRoles.Admin,
+            cancellationToken);
 }

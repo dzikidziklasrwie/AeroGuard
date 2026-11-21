@@ -37,9 +37,10 @@ Repository: [github.com/dzikidziklasrwie/AeroGuard](https://github.com/dzikidzik
 | Inspectable diagnostics | Schema-versioned JSONL with metadata, telemetry, events, transitions, and summary |
 | Queryable archive | ASP.NET Core Minimal API validates JSONL and imports unchanged replay bytes and ordered records into SQLite |
 | Access control | Revocable opaque sessions, roles, aircraft assignments, per-account operation permissions, protected invariants, and audit records |
-| Simulated operations | Packaged Natural Earth map, assigned flights, role-aware chat, REST snapshots, and session-checked SignalR updates |
-| Map containment | Validated coordinates, bounded route calculations, sphere-clipped markers, and inward-facing labels at projection edges |
+| Simulated operations | Packaged Natural Earth map, destination-based continent routes, route phase/progress, role-aware chat, and session-checked SignalR updates |
+| Map interaction | Validated coordinates, bounded transit and patrol, last-valid-position recovery, sphere-clipped markers, 1x-6x zoom, pan, reset, and selected-aircraft focus |
 | UI separation | React reads stored C++ output through REST or a static fallback; it doesn't recreate thresholds or state transitions |
+| Work reduction | Idle broadcasts stop before database reads, flight data is prepared once per update, replay state is derived in one pass, and the map module loads on demand |
 | Delivery | CMake presets, Windows/Linux CI, xUnit, clang-tidy, ASan/UBSan, Dependabot, and multi-stage Docker |
 
 ```mermaid
@@ -77,27 +78,28 @@ the integrated Docker stack.
 
 ## Verification snapshot
 
-Observed locally on 2026-11-20:
+Observed locally on 2026-11-21:
 
 | Check | Result |
 |---|---|
 | Current native feature suite | 45/45 CTest checks passed, including all seven 40-to-55-second scenarios |
-| ASP.NET Core / SQLite | 53/53 xUnit test cases passed |
-| React / TypeScript | `npm ci`, lint, typecheck, 37/37 Vitest tests in 9 files, and production build passed |
+| ASP.NET Core / SQLite | 63/63 xUnit test cases passed |
+| React / TypeScript | `npm ci`, lint, typecheck, 42/42 Vitest tests in 10 files, and production build passed |
 | Dependency audit | 0 known npm vulnerabilities reported |
 | Current Docker/browser path | API and dashboard images built; Compose reported both services healthy; Chrome completed the nginx WebSocket handshake and received four SignalR frames |
-| Hosted portability | GitHub Actions passed MSVC, GCC, ASan/UBSan, clang-tidy, frontend, API, and Docker jobs on the map-containment feature branch |
+| Previous hosted revision | GitHub Actions passed MSVC, GCC, ASan/UBSan, clang-tidy, frontend, API, and Docker jobs on the preceding `main` revision |
 
 GitHub Actions run
-[`44812965465`](https://github.com/dzikidziklasrwie/AeroGuard/actions/runs/44812965465)
-passed all seven jobs on feature commit `0488ea0`, including the map-boundary
-regression tests and Node 24 workflow actions. The automated suites negotiate
-SignalR but don't connect a real WebSocket client end to end; the browser,
-nginx WebSocket, and Docker network path passed a separate local check. We
-don't claim a coverage percentage. The in-memory connection registry and
-per-recipient snapshot work target a small single-instance demonstration, not
-a distributed or high-volume fleet. [TASKS.md](TASKS.md) records the command
-evidence.
+[`44814478366`](https://github.com/dzikidziklasrwie/AeroGuard/actions/runs/44814478366)
+passed all seven jobs on merge commit `fe2632a`. The destination-routing,
+viewport, and work-reduction changes described here have local evidence; no
+hosted result is claimed for the current worktree. The automated suites
+negotiate SignalR but don't connect a real WebSocket client end to end; the
+browser, nginx WebSocket, and Docker network path passed a separate local
+check. We don't claim a coverage percentage. The process-local connection
+registry and per-recipient authorization target a small single-instance
+demonstration, not a distributed or high-volume fleet. [TASKS.md](TASKS.md)
+records the command evidence.
 
 ## Run the demo
 
@@ -118,6 +120,11 @@ plays automatically and loops until another run is chosen. Sign in to the
 operations workspace to manage accounts, roles, aircraft, assignments, and
 audit records. The signed-in workspace opens on a simulated world map with
 assigned flights, stored C++ telemetry, flight chat, and authorized controls.
+Coordinates define a route's start. A continent selection defines its
+destination: the marker follows a great-circle `TRANSIT` for at most 30 seconds,
+then enters a bounded `PATROL`. The map supports zoom, pan, reset, and focus on
+the selected aircraft. Country routes remain local bounded patrols; they don't
+claim political-border containment.
 Compose synchronizes the configured administrator password at API startup, so
 editing `.env` and recreating the API container updates that login and revokes
 its older sessions.
@@ -133,8 +140,8 @@ cmake -E make_directory demo-output
 ```
 
 On Windows, run the same preset commands in Developer PowerShell and invoke
-`.\build\debug\aeroguard.exe`. See the [build guide](docs/build-and-run.md) for
-prerequisites, frontend commands, install steps, sanitizers, and troubleshooting.
+`.\build\debug\aeroguard.exe`. See the [project guide](docs/PROJECT-GUIDE.md#build-and-run-from-source)
+for prerequisites, frontend commands, install steps, sanitizers, and troubleshooting.
 
 ## Supplied scenarios
 
@@ -181,30 +188,17 @@ frontend/            React, TypeScript, Vite, and Vitest dashboard
 backend/             ASP.NET Core Minimal API, SQLite schema, and xUnit tests
 deploy/              nginx configuration for the integrated Docker stack
 scenarios/           Seven fictional fault-injection definitions
-docs/                Architecture, requirements, tests, decisions, and learning notes
+docs/                One project guide plus portfolio images
 ```
 
 ## Documentation
 
-| Read this | For |
-|---|---|
-| [User manual](docs/user-manual.md) | Start the demo, operate the dashboard, interpret scenarios, export reports, and troubleshoot |
-| [Architecture](docs/architecture.md) | Component boundaries, runtime flow, pattern use, SOLID mapping, ownership, and data contract |
-| [Functional requirements](docs/requirements.md) | Testable `REQ-001` to `REQ-053` behaviour |
-| [State machine](docs/state-machine.md) | Complete valid and invalid transition rules |
-| [Telemetry and scenarios](docs/telemetry-and-scenarios.md) | Fictional fields, thresholds, fault injections, and schedules |
-| [Test strategy](docs/testing.md) | Test layers, risk cases, commands, and evidence policy |
-| [Traceability](docs/traceability.md) | Requirement-to-test mapping and observed status |
-| [Security and authorization](docs/security-and-authorization.md) | Map, chat, role, assignment, session, and deployment rules |
-| [Build and run](docs/build-and-run.md) | Windows, Linux, frontend, Docker, and install instructions |
-| [Design decisions](docs/design-decisions.md) | Reasons and trade-offs behind the architecture |
-| [Limitations and roadmap](docs/limitations-and-roadmap.md) | Claims the project doesn't make and next steps |
-| [Learning and interview guide](docs/learning-and-interview-guide.md) | Modern C++ concepts, phased verification, and interview prompts |
-| [CV and portfolio entry](docs/cv-and-portfolio-entry.md) | Ready-to-edit CV copy and 30/90-second project pitches |
-| [TASKS.md](TASKS.md) | Evidence-backed completion and verification snapshot |
-
-The banner's generation prompt and the dashboard capture provenance are in
-[docs/assets/README.md](docs/assets/README.md).
+[AeroGuard project guide](docs/PROJECT-GUIDE.md) is the single detailed
+document. It contains the user manual, build instructions, architecture,
+telemetry and state contracts, security rules, requirements, test evidence,
+design decisions, `REQ-001` through `REQ-055`, limitations, CV wording,
+interview notes, and image
+provenance. [TASKS.md](TASKS.md) retains the command-level completion record.
 
 ## License
 

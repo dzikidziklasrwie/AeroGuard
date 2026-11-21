@@ -112,6 +112,9 @@ export const OPERATION_PERMISSION_LABELS: Record<OperationPermission, string> = 
 export const CHAT_SHARE_TYPES = ['TEXT', 'LOCATION', 'TELEMETRY'] as const;
 export type ChatShareType = (typeof CHAT_SHARE_TYPES)[number];
 
+export const FLIGHT_ROUTE_PHASES = ['TRANSIT', 'PATROL'] as const;
+export type FlightRoutePhase = (typeof FLIGHT_ROUTE_PHASES)[number];
+
 export interface FlightTelemetry {
   subsystem: string;
   health: string;
@@ -135,6 +138,8 @@ export interface FlightRecord {
   longitude: number;
   heading_deg: number;
   speed_kph: number;
+  route_phase: FlightRoutePhase;
+  route_progress: number;
   run_id: number;
   scenario: string | null;
   scenario_label: string | null;
