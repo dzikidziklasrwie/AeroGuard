@@ -39,6 +39,7 @@ Repository: [github.com/dzikidziklasrwie/AeroGuard](https://github.com/dzikidzik
 | Access control | Revocable opaque sessions, roles, aircraft assignments, per-account operation permissions, protected invariants, and audit records |
 | Simulated operations | Packaged Natural Earth map, destination-based continent routes, route phase/progress, role-aware chat, and session-checked SignalR updates |
 | Map interaction | Validated coordinates, bounded transit and patrol, last-valid-position recovery, sphere-clipped markers, 1x-6x zoom, pan, reset, and selected-aircraft focus |
+| Scenario-linked map effects | Each flight keeps a visible tail-number identity and receives deterministic scenario visuals derived from its stored telemetry timeline |
 | UI separation | React reads stored C++ output through REST or a static fallback; it doesn't recreate thresholds or state transitions |
 | Work reduction | Idle broadcasts stop before database reads, flight data is prepared once per update, replay state is derived in one pass, and the map module loads on demand |
 | Delivery | CMake presets, Windows/Linux CI, xUnit, clang-tidy, ASan/UBSan, Dependabot, and multi-stage Docker |
@@ -125,6 +126,15 @@ destination: the marker follows a great-circle `TRANSIT` for at most 30 seconds,
 then enters a bounded `PATROL`. The map supports zoom, pan, reset, and focus on
 the selected aircraft. Country routes remain local bounded patrols; they don't
 claim political-border containment.
+Every map marker keeps its tail number visible and uses an aircraft silhouette
+plus a short fading contrail. Its visual state follows the scenario assigned
+to that specific flight: communication loss adds signal rings, invalid sensor
+data adds an amber alert, power fluctuation adds electrical arcs, simultaneous
+failures add smoke and fault pulses, temporary recovery adds a green recovery
+ring, and prolonged overheating adds fire, debris and a land-impact burst.
+Overheating over water produces splash and sinking debris rather than a ground
+explosion. These are fictional presentation effects derived from scenario
+timelines; they don't control or affect real aircraft.
 Compose synchronizes the configured administrator password at API startup, so
 editing `.env` and recreating the API container updates that login and revokes
 its older sessions.

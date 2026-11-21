@@ -779,6 +779,9 @@ standalone files were merged here. `Shall` marks required behaviour.
 | REQ-053 | Route coordinates shall remain finite and bounded; React shall retain the last valid position for a bad update and keep markers inside the projected world. |
 | REQ-054 | A continent code shall select a destination profile. A flight shall transit from any valid start in at most 30 seconds, report phase and progress, then remain within that profile. |
 | REQ-055 | The map shall support bounded 1x-6x zoom, pan, reset, focus, and zoom-aware placement without treating a drag as a placement click. |
+| REQ-056 | Every simulated flight shall keep an always-visible tail-number marker and a stable aircraft/contrail presentation tied to that flight. |
+| REQ-057 | Scenario timelines shall drive fictional map effects for communication loss, sensor rejection, power fluctuation, compounded faults, recovery and overheating. |
+| REQ-058 | Long overheating shall enter a bounded fire phase, followed by a surface-impact effect on land or splash/debris without a ground explosion over water. |
 
 ### Verification snapshot
 

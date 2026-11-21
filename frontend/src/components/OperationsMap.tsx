@@ -1,4 +1,4 @@
-import { geoCentroid, geoGraticule10, geoNaturalEarth1, geoPath } from 'd3-geo';
+import { geoCentroid, geoContains, geoGraticule10, geoNaturalEarth1, geoPath } from 'd3-geo';
 import type { Feature, FeatureCollection, GeoJsonProperties, Geometry } from 'geojson';
 import {
   type FormEvent,
@@ -150,6 +150,17 @@ interface HoveredCountry {
   longitude: number;
 }
 
+export type MapScenarioEffect =
+  | 'none'
+  | 'communication'
+  | 'sensor'
+  | 'overheating'
+  | 'impact-land'
+  | 'impact-water'
+  | 'power'
+  | 'multiple'
+  | 'recovery';
+
 interface OperationsMapProps {
   token: string;
   currentUser: UserAccount;
@@ -173,6 +184,53 @@ function formatCoordinate(value: number, positive: string, negative: string): st
 
 function formatInputCoordinate(value: number): string {
   return (Math.round(value * 10_000) / 10_000).toFixed(4);
+}
+
+function isOverLand(latitude: number, longitude: number): boolean {
+  return countries.features.some((country) =>
+    geoContains(country, [longitude, latitude]));
+}
+
+export function getMapScenarioEffect(flight: FlightRecord): MapScenarioEffect {
+  const elapsed = flight.scenario_elapsed_ms;
+  switch (flight.scenario) {
+    case 'communication-interruption':
+      return elapsed >= 10_000 && elapsed < 22_000 ? 'communication' : 'none';
+    case 'invalid-sensor-data':
+      return elapsed >= 10_000 && elapsed < 20_000 ? 'sensor' : 'none';
+    case 'power-fluctuations':
+      return elapsed >= 10_000 && elapsed < 26_000 ? 'power' : 'none';
+    case 'multiple-subsystem-failures':
+      return elapsed >= 8_000 && elapsed < 44_000 ? 'multiple' : 'none';
+    case 'recovery-after-temporary-failure':
+      if (elapsed >= 10_000 && elapsed < 18_000) return 'recovery';
+      if (elapsed >= 18_000 && elapsed < 30_000) return 'recovery';
+      return 'none';
+    case 'simulated-overheating':
+      if (elapsed >= 10_000 && elapsed < 25_000) return 'overheating';
+      if (elapsed >= 25_000 && elapsed < 31_000) {
+        return isOverLand(flight.latitude, flight.longitude)
+          ? 'impact-land'
+          : 'impact-water';
+      }
+      return 'none';
+    default:
+      return 'none';
+  }
+}
+
+export function getMapScenarioEffectLabel(effect: MapScenarioEffect): string {
+  switch (effect) {
+    case 'communication': return 'Communication lost';
+    case 'sensor': return 'Sensor alert';
+    case 'overheating': return 'Engine overheating';
+    case 'impact-land': return 'Surface impact';
+    case 'impact-water': return 'Water impact';
+    case 'power': return 'Electrical fluctuation';
+    case 'multiple': return 'Multiple subsystem fault';
+    case 'recovery': return 'Recovery in progress';
+    default: return 'Normal visual state';
+  }
 }
 
 function formatCoordinatePair(latitude: number, longitude: number): string {
@@ -366,7 +424,7 @@ function telemetryValue(value: unknown): string {
   return JSON.stringify(value);
 }
 
-export function OperationsMap({ token, currentUser, aircraft, runs = [], onUnauthorized }: OperationsMapProps) {
+export function OperationsMap({ token, currentUser, aircraft, runs = [] }: OperationsMapProps) {
   const [flights, setFlights] = useState<FlightRecord[]>([]);
   const [permissions, setPermissions] = useState<OperationPermission[]>([]);
   const [selectedFlightId, setSelectedFlightId] = useState<number | null>(null);
@@ -405,12 +463,8 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [], onUnaut
   }, []);
 
   const handleError = useCallback((requestError: unknown) => {
-    if (requestError instanceof ApiError && requestError.status === 401) {
-      onUnauthorized();
-      return;
-    }
     setError(requestError instanceof Error ? requestError.message : 'The operation failed. Try again.');
-  }, [onUnauthorized]);
+  }, []);
 
   const handleMapOperationError = useCallback((requestError: unknown) => {
     if (requestError instanceof ApiError) {
@@ -457,8 +511,6 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [], onUnaut
 
       if (permissionResult.status === 'fulfilled') {
         setPermissions(permissionResult.value);
-      } else if (permissionResult.reason instanceof ApiError && permissionResult.reason.status === 401) {
-        onUnauthorized();
       }
     }
     void load();
@@ -466,7 +518,7 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [], onUnaut
       active = false;
       controller.abort();
     };
-  }, [aircraft, currentUser, handleError, onUnauthorized, token]);
+  }, [aircraft, currentUser, handleError, token]);
 
   useEffect(() => {
     if (dataMode !== 'api') return;
@@ -1036,18 +1088,67 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [], onUnaut
                   const point = projectMarkerCoordinate(flight.latitude, flight.longitude);
                   if (!point) return null;
                   const active = flight.id === selectedFlight?.id;
+                  const effect = getMapScenarioEffect(flight);
+                  const impactIsWater = effect === 'impact-water';
+                  const impactIsLand = effect === 'impact-land';
                   return <g
                     key={flight.id}
-                    className={`aircraft-marker marker-${flight.condition.toLowerCase()}${active ? ' active' : ''}`}
+                    className={`aircraft-marker marker-${flight.condition.toLowerCase()}${active ? ' active' : ''} scenario-effect-${effect}`}
                     transform={`translate(${point[0]} ${point[1]}) scale(${1 / viewport.zoom})`}
                     role="button"
                     tabIndex={0}
-                    aria-label={`${flight.tail_number}, simulated position ${formatCoordinate(flight.latitude, 'N', 'S')}, ${formatCoordinate(flight.longitude, 'E', 'W')}`}
+                    aria-label={`${flight.tail_number}, simulated position ${formatCoordinate(flight.latitude, 'N', 'S')}, ${formatCoordinate(flight.longitude, 'E', 'W')}, ${getMapScenarioEffectLabel(effect)}, scenario ${flight.scenario_label ?? flight.scenario ?? 'session demo'}`}
                     onClick={(event) => { event.stopPropagation(); setSelectedFlightId(flight.id); }}
                     onKeyDown={(event) => selectMarker(flight.id, event)}
                   >
                     <circle className="marker-pulse" r={active ? 18 : 13} />
                     <circle className="marker-core" r={active ? 7 : 5.5} />
+                    <g className="marker-contrail" transform={`rotate(${flight.heading_deg})`}>
+                      <circle cx="-12" cy="0" r="2.4" />
+                      <circle cx="-18" cy="0" r="1.7" />
+                      <circle cx="-24" cy="0" r="1.1" />
+                    </g>
+                    {!impactIsLand && !impactIsWater && <g className="marker-plane-heading" transform={`rotate(${flight.heading_deg})`}>
+                      <path className="marker-aircraft" d="M0-13 L3.2-4.5 L10-1.5 L10 1.5 L3.5 0.8 L2.2 7.5 L6 9.8 L6 11.5 L0 10 L-6 11.5 L-6 9.8 L-2.2 7.5 L-3.5 0.8 L-10 1.5 L-10-1.5 L-3.2-4.5 Z" />
+                    </g>}
+                    {effect === 'communication' && <g className="scenario-effect scenario-communication" aria-hidden="true">
+                      <path d="M-17 2 A18 18 0 0 1 17 2" />
+                      <path d="M-11 7 A11 11 0 0 1 11 7" />
+                      <circle cx="0" cy="10" r="2" />
+                    </g>}
+                    {effect === 'sensor' && <g className="scenario-effect scenario-sensor" aria-hidden="true">
+                      <path d="M0-17 L-5-7 L2-5 L-3 8" />
+                      <circle cx="-12" cy="-10" r="2" /><circle cx="12" cy="8" r="2" />
+                    </g>}
+                    {effect === 'overheating' && <g className="scenario-effect scenario-fire" aria-hidden="true">
+                      <path className="flame flame-large" d="M0 12 C-12 22 -8 38 0 46 C9 38 13 23 0 12Z" />
+                      <path className="flame flame-small" d="M-9 14 C-16 20 -13 29 -7 34 C-3 27 -3 19 -9 14Z" />
+                      <path className="flame flame-small" d="M9 14 C16 20 13 29 7 34 C3 27 3 19 9 14Z" />
+                      <circle className="smoke" cx="-5" cy="44" r="5" /><circle className="smoke" cx="6" cy="48" r="4" />
+                    </g>}
+                    {effect === 'power' && <g className="scenario-effect scenario-power" aria-hidden="true">
+                      <path d="M-20-8 L-12-2 L-19 5 L-8 10" />
+                      <path d="M18-12 L10-5 L17 3 L7 9" />
+                      <circle cx="-8" cy="-14" r="2" /><circle cx="12" cy="-16" r="2" />
+                    </g>}
+                    {effect === 'multiple' && <g className="scenario-effect scenario-multiple" aria-hidden="true">
+                      <circle cx="-9" cy="-14" r="5" /><circle cx="8" cy="-12" r="7" />
+                      <path d="M-20 8 L-12 3 M20 8 L12 3 M0 16 L0 8" />
+                      <circle className="smoke" cx="-14" cy="-24" r="4" /><circle className="smoke" cx="12" cy="-25" r="5" />
+                    </g>}
+                    {effect === 'recovery' && <g className="scenario-effect scenario-recovery" aria-hidden="true">
+                      <circle cx="0" cy="0" r="21" /><circle cx="0" cy="0" r="15" />
+                    </g>}
+                    {impactIsLand && <g className="scenario-effect scenario-impact-land" aria-hidden="true">
+                      <circle className="impact-ring" cx="0" cy="0" r="12" />
+                      <circle className="impact-core" cx="0" cy="0" r="6" />
+                      <path className="debris" d="M-3-4 L-18-18 M4-3 L18-15 M-2 5 L-13 20 M3 5 L16 18" />
+                    </g>}
+                    {impactIsWater && <g className="scenario-effect scenario-impact-water" aria-hidden="true">
+                      <circle className="splash-ring" cx="0" cy="8" r="13" />
+                      <path className="water-spray" d="M0 8 C-8-2 -5-14 0-20 C5-14 8-2 0 8Z" />
+                      <path className="debris" d="M-3 5 L-16-12 M3 5 L14-10" />
+                    </g>}
                     <g className="marker-label" transform={markerLabelTransform(point, viewport)}><rect width={MARKER_LABEL_WIDTH} height="25" rx="4" /><text x="9" y="17">{flight.tail_number}</text></g>
                   </g>;
                 })}
@@ -1075,6 +1176,7 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [], onUnaut
                 <div><dt>Longitude</dt><dd>{formatCoordinate(selectedFlight.longitude, 'E', 'W')}</dd></div>
                 <div><dt>Speed</dt><dd>{Math.round(selectedFlight.speed_kph)} km/h</dd></div>
                 <div><dt>Scenario time</dt><dd>{formatScenarioTime(selectedFlight.scenario_elapsed_ms, selectedFlight.scenario_duration_ms)}</dd></div>
+                <div><dt>Map effect</dt><dd>{getMapScenarioEffectLabel(getMapScenarioEffect(selectedFlight))}</dd></div>
                 <div><dt>Scope</dt><dd>{titleCase(selectedFlight.scope_type)}{selectedFlight.scope_type !== 'WORLD' ? ` / ${selectedFlight.scope_code}` : ''}</dd></div>
                 <div><dt>Route</dt><dd>{selectedFlight.route_phase === 'TRANSIT' ? `Transit ${Math.round(Math.max(0, Math.min(1, selectedFlight.route_progress)) * 100)}%` : 'Patrol'}</dd></div>
                 <div><dt>Access</dt><dd>{isAdmin ? 'Administrator' : titleCase(selectedFlight.current_user_access ?? 'VIEWER')}</dd></div>
