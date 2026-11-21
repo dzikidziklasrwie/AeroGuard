@@ -44,14 +44,14 @@ cmake --build --preset sanitizers
 ctest --preset sanitizers --output-on-failure
 ```
 
-See [the build guide](docs/build-and-run.md) for prerequisites and platform
-details.
+See [the project guide](docs/PROJECT-GUIDE.md#build-and-run-from-source) for
+prerequisites and platform details.
 
 ## Change guidelines
 
 - Add or update a `REQ-xxx` entry for externally visible behaviour.
-- Link each behavioural requirement to an automated test in
-  `docs/traceability.md`.
+- Link each behavioural requirement to an automated test in the requirement
+  and verification section of `docs/PROJECT-GUIDE.md`.
 - Keep seeded runs reproducible; tests must not depend on wall-clock time.
 - Keep all seven packaged default scenarios between 40 and 55 seconds and
   regenerate the manifest and JSONL files after a schedule change.

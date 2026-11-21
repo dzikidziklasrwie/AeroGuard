@@ -23,6 +23,8 @@ public sealed record FlightDto(
     double Latitude,
     double Longitude,
     double HeadingDeg,
+    string RoutePhase,
+    double RouteProgress,
     double SpeedKph,
     long RunId,
     string Scenario,
