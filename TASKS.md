@@ -38,6 +38,8 @@ Snapshot date: 2026-11-21
   event rejection.
 - [x] Admin bypass, `OWNER` operation checks, per-account overrides, role
   defaults, session-aware SignalR recipients, and fixed-window write limits.
+- [x] Administrator aircraft assignment with People-to-Fleet role matching:
+  Operator, Maintainer, or Viewer labels map to explicit API access levels.
 - [x] ISO country routes, mapped-aircraft `ACTIVE` invariant, atomic chat
   authorization, and 500-row per-flight chat retention.
 - [x] Per-flight broadcast failure isolation and stale live-event rejection.

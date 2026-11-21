@@ -245,15 +245,17 @@ room opens.
 
 Aircraft assignments apply to one aircraft:
 
-| Assignment | Access |
-|---|---|
-| `OWNER` | Read and update; at least one owner must remain |
-| `MAINTAINER` | Read and update the aircraft record; place, reconfigure, and remove assigned map flights |
-| `VIEWER` | Read |
+| Fleet label | API level | Access |
+|---|---|---|
+| `Operator` | `OWNER` | Read and update; at least one owner must remain |
+| `Maintainer` | `MAINTAINER` | Read and update the aircraft record; place, reconfigure, and remove assigned map flights |
+| `Viewer` | `VIEWER` | Read |
 
-Account roles and aircraft assignments are separate controls. `Operator` is
-not an aircraft assignment level. Assign one of `OWNER`, `MAINTAINER`, or
-`VIEWER` to a specific aircraft after choosing the account role.
+Only an administrator can assign an existing aircraft to another account.
+Fleet uses the same visible role names as People and roles and proposes a
+matching Fleet role when the administrator selects an account. The stored API
+level remains `OWNER`, `MAINTAINER`, or `VIEWER` so authorization rules stay
+explicit and backward compatible.
 
 The five account operation permissions are `FLIGHT_PLACE_OWN`,
 `FLIGHT_RECONFIGURE_OWN`, `FLIGHT_REMOVE_OWN`, `CHAT_SEND`, and

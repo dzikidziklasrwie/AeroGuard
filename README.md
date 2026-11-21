@@ -126,6 +126,9 @@ Account roles and aircraft assignments are separate: `Operator`, `Maintainer`,
 and `Viewer` define account capabilities, while `OWNER`, `MAINTAINER`, and
 `VIEWER` define access to a specific aircraft. Only an administrator can assign
 an existing aircraft to another account or change that assignment.
+Fleet presents these access levels as `Operator`, `Maintainer`, and `Viewer`
+so they match People and roles; the Operator choice maps to the API's `OWNER`
+level. Selecting an account proposes the matching Fleet role automatically.
 Coordinates define a route's start. A continent selection defines its
 destination: the marker follows a great-circle `TRANSIT` for at most 30 seconds,
 then enters a bounded `PATROL`. The map supports zoom, pan, reset, and focus on
