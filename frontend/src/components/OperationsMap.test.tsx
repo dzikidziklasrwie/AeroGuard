@@ -3,7 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AircraftRecord, FlightRecord, UserAccount } from '../api/types';
 import type { RunArchiveEntry } from '../types';
-import { getMapScenarioEffect, OperationsMap } from './OperationsMap';
+import { OperationsMap } from './OperationsMap';
+import { getMapScenarioEffect as calculateMapScenarioEffect } from './mapScenarioEffects';
 
 const hubMocks = vi.hoisted(() => ({
   connect: vi.fn().mockResolvedValue(async () => undefined),
@@ -93,7 +94,27 @@ const runs: RunArchiveEntry[] = [{
   record_count: 600,
   replay_url: '/api/runs/11/replay',
   source: 'api',
+}, {
+  id: 12,
+  scenario: 'simulated-overheating',
+  label: 'Simulated overheating',
+  description: 'Sustained synthetic thermal fault',
+  final_state: 'FAULT',
+  duration_ms: 105_000,
+  tick_ms: 100,
+  record_count: 1_050,
+  replay_url: '/api/runs/12/replay',
+  source: 'api',
 }];
+
+function getMapScenarioEffect(candidate: FlightRecord) {
+  const overLand = !(candidate.latitude === 0 && candidate.longitude === -30);
+  return calculateMapScenarioEffect(
+    candidate.scenario,
+    candidate.scenario_elapsed_ms,
+    () => overLand,
+  );
+}
 
 function apiMock({ flights = [flight], permissions = ['FLIGHT_PLACE_OWN', 'CHAT_SEND', 'TELEMETRY_SHARE'] as string[] } = {}) {
   return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
@@ -105,6 +126,18 @@ function apiMock({ flights = [flight], permissions = ['FLIGHT_PLACE_OWN', 'CHAT_
     if (url === '/api/operations/flights/44' && init?.method === 'PUT') {
       const body = JSON.parse(String(init.body));
       return Promise.resolve(response({ ...flight, ...body, version: flight.version + 1 }));
+    }
+    if (url === '/api/operations/flights/44/scenario' && init?.method === 'PUT') {
+      const body = JSON.parse(String(init.body));
+      return Promise.resolve(response({
+        ...flight,
+        run_id: body.run_id,
+        scenario: 'simulated-overheating',
+        scenario_label: 'Simulated overheating',
+        scenario_elapsed_ms: 0,
+        scenario_duration_ms: 105_000,
+        version: flight.version + 1,
+      }));
     }
     if (url === '/api/operations/flights') return Promise.resolve(response(flights));
     if (url === '/api/operations/permissions') return Promise.resolve(response(permissions));
@@ -145,8 +178,57 @@ describe('OperationsMap', () => {
       .toBe('multiple');
     expect(getMapScenarioEffect({ ...flight, scenario: 'recovery-after-temporary-failure', scenario_elapsed_ms: 15_000 }))
       .toBe('recovery');
-    expect(getMapScenarioEffect({ ...flight, scenario: 'simulated-overheating', scenario_elapsed_ms: 15_000 }))
-      .toBe('overheating');
+    expect(getMapScenarioEffect({ ...flight, scenario: 'simulated-overheating', scenario_elapsed_ms: 59_999 }))
+      .toBe('thermal');
+    expect(getMapScenarioEffect({ ...flight, scenario: 'simulated-overheating', scenario_elapsed_ms: 60_000 }))
+      .toBe('fire');
+    expect(getMapScenarioEffect({ ...flight, scenario: 'simulated-overheating', scenario_elapsed_ms: 80_000 }))
+      .toBe('airburst');
+    expect(getMapScenarioEffect({ ...flight, scenario: 'simulated-overheating', scenario_elapsed_ms: 84_000 }))
+      .toBe('debris');
+    expect(getMapScenarioEffect({ ...flight, scenario: 'simulated-overheating', scenario_elapsed_ms: 92_000 }))
+      .toBe('impact-land');
+    expect(getMapScenarioEffect({ ...flight, scenario: 'simulated-overheating', scenario_elapsed_ms: 92_000, latitude: 0, longitude: -30 }))
+      .toBe('impact-water');
+    expect(getMapScenarioEffect({ ...flight, scenario: 'simulated-overheating', scenario_elapsed_ms: 100_000 }))
+      .toBe('aftermath-land');
+    expect(getMapScenarioEffect({ ...flight, scenario: 'simulated-overheating', scenario_elapsed_ms: 100_000, latitude: 0, longitude: -30 }))
+      .toBe('aftermath-water');
+  });
+
+  it('updates the selected aircraft through fire, breakup, debris, and water impact', async () => {
+    const overheating = {
+      ...flight,
+      scenario: 'simulated-overheating',
+      scenario_label: 'Simulated overheating',
+      scenario_elapsed_ms: 65_000,
+      scenario_duration_ms: 105_000,
+    };
+    vi.stubGlobal('fetch', apiMock({ flights: [overheating] }));
+    render(<OperationsMap token="session-token" currentUser={owner} aircraft={aircraft} runs={runs} onUnauthorized={vi.fn()} />);
+
+    const marker = await screen.findByRole('button', { name: /N204AG, simulated position/ });
+    expect(marker.querySelector('.scenario-fire')).toBeInTheDocument();
+    expect(screen.getByText('Simulated overheating / Aircraft fire')).toBeInTheDocument();
+    await waitFor(() => expect(hubMocks.connect).toHaveBeenCalled());
+    const handlers = hubMocks.connect.mock.calls[0][1];
+
+    act(() => handlers.onFlightUpdated({ ...overheating, scenario_elapsed_ms: 80_000, event_sequence: 301 }));
+    expect(marker.querySelector('.scenario-airburst')).toBeInTheDocument();
+    expect(marker.querySelector('.marker-aircraft')).not.toBeInTheDocument();
+
+    act(() => handlers.onFlightUpdated({ ...overheating, scenario_elapsed_ms: 85_000, event_sequence: 302 }));
+    expect(marker.querySelectorAll('.debris-fragment')).toHaveLength(4);
+
+    act(() => handlers.onFlightUpdated({
+      ...overheating,
+      scenario_elapsed_ms: 92_000,
+      latitude: 0,
+      longitude: -30,
+      event_sequence: 303,
+    }));
+    expect(marker.querySelector('.scenario-impact-water')).toBeInTheDocument();
+    expect(marker.querySelector('.scenario-impact-land')).not.toBeInTheDocument();
   });
 
   it('renders published world geometry and exposes selectable simulated aircraft', async () => {
@@ -158,6 +240,10 @@ describe('OperationsMap', () => {
     expect(screen.getByRole('group', { name: 'Interactive world map with simulated aircraft positions' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Natural Earth' })).toHaveAttribute('href', 'https://www.naturalearthdata.com/');
     expect(screen.getByRole('button', { name: /N204AG, simulated position/ })).toBeInTheDocument();
+    expect(screen.getByText('Selected aircraft')).toBeInTheDocument();
+    expect(screen.getByText('Normal operation / Normal visual state')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /N204AG, simulated position/ }).querySelector('.marker-ground-shadow')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /N204AG, simulated position/ }).querySelector('.marker-selection-ring')).toBeInTheDocument();
     expect(screen.getByText('735 km/h')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Telemetry' })).toBeInTheDocument();
     expect(screen.getByText('En route to the global patrol route')).toBeInTheDocument();
@@ -169,6 +255,24 @@ describe('OperationsMap', () => {
       onMessagePosted: expect.any(Function),
       onReconnected: expect.any(Function),
     })));
+  });
+
+  it('assigns a scenario only to the selected aircraft without changing its destination', async () => {
+    const fetchMock = apiMock();
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    render(<OperationsMap token="session-token" currentUser={owner} aircraft={aircraft} runs={runs} onUnauthorized={vi.fn()} />);
+
+    await screen.findByRole('button', { name: /N204AG, simulated position/ });
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Scenario assigned to N204AG' }), '12');
+    await user.click(screen.getByRole('button', { name: 'Apply scenario' }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/operations/flights/44/scenario', expect.objectContaining({
+      method: 'PUT',
+      body: JSON.stringify({ run_id: 12, expected_version: 3 }),
+    })));
+    expect(screen.getByText('Simulated overheating / Normal visual state')).toBeInTheDocument();
+    expect(screen.getByText('En route to the global patrol route')).toBeInTheDocument();
   });
 
   it('clips boundary markers to the globe and keeps their labels pointed inward', async () => {
@@ -258,7 +362,7 @@ describe('OperationsMap', () => {
     render(<OperationsMap token="session-token" currentUser={owner} aircraft={aircraft} runs={runs} onUnauthorized={vi.fn()} />);
 
     expect(await screen.findByText('The operations API is unavailable. This session uses temporary simulated flights and messages.')).toBeInTheDocument();
-    expect(screen.getAllByText('Session demo')).toHaveLength(2);
+    expect(screen.getAllByText('Session demo')).toHaveLength(3);
     expect(screen.getByRole('button', { name: /N204AG, simulated position/ })).toBeInTheDocument();
     expect(hubMocks.connect).not.toHaveBeenCalled();
   });
@@ -287,7 +391,7 @@ describe('OperationsMap', () => {
     render(<OperationsMap token="session-token" currentUser={owner} aircraft={aircraft} runs={runs} onUnauthorized={vi.fn()} />);
 
     await user.click(await screen.findByRole('button', { name: 'Place aircraft' }));
-    expect(screen.getByLabelText('Recorded run')).toBeRequired();
+    expect(screen.getByLabelText('Aircraft scenario')).toBeRequired();
     expect(screen.getByLabelText('Start coordinates')).toHaveAttribute('placeholder', '55.868581 9.873817');
     expect(screen.getByLabelText('Speed km/h')).toHaveAttribute('min', '400');
     expect(screen.getByLabelText('Speed km/h')).toHaveAttribute('max', '1100');

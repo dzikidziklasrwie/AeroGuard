@@ -57,10 +57,18 @@ public sealed class ApiEndpointTests(AeroGuardApiFactory factory)
             "/api/runs?finalState=NORMAL",
             CancellationToken);
 
-        Assert.Equal(7, body.GetArrayLength());
+        Assert.Equal(6, body.GetArrayLength());
         Assert.All(
             body.EnumerateArray(),
             run => Assert.Equal("NORMAL", run.GetProperty("final_state").GetString()));
+
+        var faultRuns = await _client.GetFromJsonAsync<JsonElement>(
+            "/api/runs?finalState=FAULT",
+            CancellationToken);
+        Assert.Equal(1, faultRuns.GetArrayLength());
+        Assert.Equal(
+            "simulated-overheating",
+            faultRuns[0].GetProperty("scenario").GetString());
     }
 
     [Fact]

@@ -10,6 +10,8 @@ public static class FlightMotion
     private const double MaximumTransitSeconds = 30.0;
     private const double MaximumRenderedLatitude = 82.0;
     private const double MaximumRenderedLongitude = 176.0;
+    private const long OverheatingMotionHoldMs = 80_000;
+    private const string OverheatingScenario = "simulated-overheating";
 
     public static FlightPosition Calculate(FlightRecord flight, DateTimeOffset now)
     {
@@ -19,14 +21,19 @@ public static class FlightMotion
         var scenarioElapsedMs = flight.ScenarioDurationMs <= 0
             ? 0
             : elapsedMs % flight.ScenarioDurationMs;
+        var routeElapsedSeconds = RouteElapsedSeconds(
+            flight,
+            elapsedMs,
+            scenarioElapsedMs);
 
         var start = MakeRenderable(flight.CenterLatitude, flight.CenterLongitude);
         var profile = ResolveProfile(flight, start);
-        var entry = MakeRenderable(profile.EntryLatitude, profile.EntryLongitude);
+        var entryPoint = profile.EntryPoint();
+        var entry = MakeRenderable(entryPoint.Latitude, entryPoint.Longitude);
         var transitSeconds = TransitDurationSeconds(start, entry, flight.SpeedKph);
-        if (transitSeconds > 0.0 && elapsedSeconds < transitSeconds)
+        if (transitSeconds > 0.0 && routeElapsedSeconds < transitSeconds)
         {
-            var progress = Math.Clamp(elapsedSeconds / transitSeconds, 0.0, 1.0);
+            var progress = Math.Clamp(routeElapsedSeconds / transitSeconds, 0.0, 1.0);
             var current = MakeRenderable(InterpolateGreatCircle(start, entry, progress));
             var next = MakeRenderable(InterpolateGreatCircle(
                 start,
@@ -42,7 +49,7 @@ public static class FlightMotion
                 progress);
         }
 
-        var patrolElapsedSeconds = Math.Max(0.0, elapsedSeconds - transitSeconds);
+        var patrolElapsedSeconds = Math.Max(0.0, routeElapsedSeconds - transitSeconds);
         var patrol = CalculatePatrol(profile, flight, patrolElapsedSeconds);
         return new FlightPosition(
             patrol.Latitude,
@@ -51,6 +58,26 @@ public static class FlightMotion
             scenarioElapsedMs,
             FlightRoutePhases.Patrol,
             1.0);
+    }
+
+    private static double RouteElapsedSeconds(
+        FlightRecord flight,
+        long elapsedMs,
+        long scenarioElapsedMs)
+    {
+        if (!string.Equals(
+                flight.Scenario,
+                OverheatingScenario,
+                StringComparison.Ordinal)
+            || flight.ScenarioDurationMs <= OverheatingMotionHoldMs)
+        {
+            return elapsedMs / 1_000.0;
+        }
+
+        var completedCycles = elapsedMs / flight.ScenarioDurationMs;
+        var movingElapsedMs = (completedCycles * OverheatingMotionHoldMs)
+            + Math.Min(scenarioElapsedMs, OverheatingMotionHoldMs);
+        return movingElapsedMs / 1_000.0;
     }
 
     private static RouteRegionProfile ResolveProfile(

@@ -33,7 +33,10 @@ public sealed class ArtifactImporterTests : IDisposable
         Assert.Equal(7, second.Skipped);
         Assert.Equal(7, await repository.CountRunsAsync(CancellationToken));
         var runs = await repository.GetRunsAsync(null, null, 10, CancellationToken);
-        Assert.All(runs, run => Assert.InRange(run.DurationMs, 40_000, 55_000));
+        Assert.All(runs, run => Assert.InRange(run.DurationMs, 40_000, 105_000));
+        Assert.Equal(
+            105_000,
+            runs.Single(run => run.Scenario == "simulated-overheating").DurationMs);
     }
 
     [Fact]

@@ -61,13 +61,16 @@ TEST(REQ003_SimulationConfiguration, ParsesScenarioDurationAndFaultTiming) {
   EXPECT_EQ(scenario.faults.front().subsystem, SubsystemId::Communication);
 }
 
-TEST(REQ051_ScenarioDuration, KeepsEveryPackagedScenarioBetween40And55Seconds) {
+TEST(REQ051_ScenarioDuration, KeepsPackagedScenariosWithinDocumentedDurations) {
   const auto files = list_scenario_files(kSourceDirectory / "scenarios");
   ASSERT_EQ(files.size(), 7U);
   for (const auto& file : files) {
     const auto scenario = load_scenario(file);
     EXPECT_GE(scenario.default_duration, SimTime{40'000}) << file.string();
-    EXPECT_LE(scenario.default_duration, SimTime{55'000}) << file.string();
+    const auto maximum = scenario.name == "simulated-overheating"
+                             ? SimTime{105'000}
+                             : SimTime{55'000};
+    EXPECT_LE(scenario.default_duration, maximum) << file.string();
   }
 }
 
