@@ -211,6 +211,7 @@ room opens.
 |---|---|---|
 | `Admin` | All accounts, roles, aircraft, assignments, flights, and audit | Bypasses all five checks |
 | `Operator` | Create aircraft; update assigned aircraft as owner or maintainer | All five permissions |
+| `Maintainer` | Operate assigned aircraft on the map and update assigned aircraft | All five permissions |
 | `Viewer` | Read assigned aircraft | `CHAT_SEND` |
 
 Aircraft assignments apply to one aircraft:
@@ -218,8 +219,12 @@ Aircraft assignments apply to one aircraft:
 | Assignment | Access |
 |---|---|
 | `OWNER` | Read and update; at least one owner must remain |
-| `MAINTAINER` | Read and update the aircraft record |
+| `MAINTAINER` | Read and update the aircraft record; place, reconfigure, and remove assigned map flights |
 | `VIEWER` | Read |
+
+Account roles and aircraft assignments are separate controls. `Operator` is
+not an aircraft assignment level. Assign one of `OWNER`, `MAINTAINER`, or
+`VIEWER` to a specific aircraft after choosing the account role.
 
 The five account operation permissions are `FLIGHT_PLACE_OWN`,
 `FLIGHT_RECONFIGURE_OWN`, `FLIGHT_REMOVE_OWN`, `CHAT_SEND`, and
@@ -660,13 +665,13 @@ status.
 
 ### Access matrix
 
-| Action | `Admin` | Assigned non-owner | `OWNER` |
-|---|---|---|---|
-| View flight, telemetry, and chat | Every active flight | Assigned aircraft | Assigned aircraft |
-| Place aircraft | Any eligible aircraft | Denied | `FLIGHT_PLACE_OWN` required |
-| Reconfigure flight | Any active flight | Denied | `FLIGHT_RECONFIGURE_OWN` required |
-| Remove flight | Any active flight | Denied | `FLIGHT_REMOVE_OWN` required |
-| Send text or location | Allowed | `CHAT_SEND` required | `CHAT_SEND` required |
+| Action | `Admin` | Assigned `VIEWER` | `MAINTAINER` | `OWNER` |
+|---|---|---|---|---|
+| View flight, telemetry, and chat | Every active flight | Assigned aircraft | Assigned aircraft | Assigned aircraft |
+| Place aircraft | Any eligible aircraft | Denied | `FLIGHT_PLACE_OWN` required | `FLIGHT_PLACE_OWN` required |
+| Reconfigure flight | Any active flight | Denied | `FLIGHT_RECONFIGURE_OWN` required | `FLIGHT_RECONFIGURE_OWN` required |
+| Remove flight | Any active flight | Denied | `FLIGHT_REMOVE_OWN` required | `FLIGHT_REMOVE_OWN` required |
+| Send text or location | Allowed | `CHAT_SEND` required | `CHAT_SEND` required | `CHAT_SEND` required |
 | Send telemetry | Allowed | Denied | `CHAT_SEND` and `TELEMETRY_SHARE` required |
 | Replace account operation permissions | Allowed | Denied | Denied |
 
