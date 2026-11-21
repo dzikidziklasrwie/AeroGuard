@@ -41,6 +41,8 @@ public sealed class OperationsEndpointTests(AeroGuardApiFactory factory)
             await placement.Content.ReadAsStringAsync(CancellationToken));
         Assert.Equal("simulated-overheating", flight.GetProperty("scenario").GetString());
         Assert.Equal(6, flight.GetProperty("telemetry").GetArrayLength());
+        Assert.Equal("TRANSIT", flight.GetProperty("route_phase").GetString());
+        Assert.InRange(flight.GetProperty("route_progress").GetDouble(), 0.0, 1.0);
         Assert.True(flight.GetProperty("can_manage").GetBoolean());
         Assert.True(flight.GetProperty("can_remove").GetBoolean());
         Assert.Single(flights.EnumerateArray());
@@ -445,6 +447,10 @@ public sealed class OperationsEndpointTests(AeroGuardApiFactory factory)
         var identity = factory.Services.GetRequiredService<IIdentityRepository>();
         var tokenIssuer = factory.Services.GetRequiredService<IAccessTokenIssuer>();
         var registry = factory.Services.GetRequiredService<OperationsConnectionRegistry>();
+        var activeAdministrators = await identity.GetActiveUserIdsInRoleAsync(
+            BuiltInRoles.Admin,
+            CancellationToken);
+        Assert.Contains(admin.UserId, activeAdministrators);
         var session = await identity.FindSessionAsync(
             tokenIssuer.Hash(admin.Token),
             DateTimeOffset.UtcNow,

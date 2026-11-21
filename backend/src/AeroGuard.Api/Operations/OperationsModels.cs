@@ -41,7 +41,9 @@ public sealed record FlightPosition(
     double Latitude,
     double Longitude,
     double HeadingDeg,
-    long ScenarioElapsedMs);
+    long ScenarioElapsedMs,
+    string RoutePhase,
+    double RouteProgress);
 
 public sealed record FlightRecipients(
     long FlightId,
@@ -59,6 +61,12 @@ public static class FlightScopeTypes
         Continent,
         Country,
     };
+}
+
+public static class FlightRoutePhases
+{
+    public const string Transit = "TRANSIT";
+    public const string Patrol = "PATROL";
 }
 
 public static class FlightShareTypes

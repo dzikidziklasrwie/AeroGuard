@@ -56,6 +56,34 @@ public sealed class IdentityRepository(
         return result;
     }
 
+    public async Task<IReadOnlyList<long>> GetActiveUserIdsInRoleAsync(
+        string roleName,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(roleName);
+        await using var connection = await connectionFactory.OpenConnectionAsync(cancellationToken);
+        await using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT users.id
+            FROM users
+            JOIN user_roles ON user_roles.user_id = users.id
+            JOIN roles ON roles.id = user_roles.role_id
+            WHERE users.is_active = 1
+              AND roles.name = $role_name COLLATE NOCASE
+            ORDER BY users.id;
+            """;
+        command.Parameters.AddWithValue("$role_name", roleName);
+        var userIds = new List<long>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            userIds.Add(reader.GetInt64(0));
+        }
+
+        return userIds;
+    }
+
     public async Task<UserAccount> CreateUserAsync(
         string username,
         string displayName,

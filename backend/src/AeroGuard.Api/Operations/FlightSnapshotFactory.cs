@@ -16,8 +16,33 @@ public sealed class FlightSnapshotFactory(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(flight);
+        var prepared = await PrepareAsync(flight, cancellationToken);
+        return Create(flight, prepared, permissions, isAdmin);
+    }
+
+    public async Task<FlightSnapshotData> PrepareAsync(
+        FlightRecord flight,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(flight);
         var position = FlightMotion.Calculate(flight, timeProvider.GetUtcNow());
         var telemetry = await GetTelemetryAsync(flight, position.ScenarioElapsedMs, cancellationToken);
+        return new FlightSnapshotData(
+            position,
+            telemetry,
+            FlightCondition.Classify(telemetry));
+    }
+
+    public static FlightDto Create(
+        FlightRecord flight,
+        FlightSnapshotData prepared,
+        IReadOnlyCollection<string> permissions,
+        bool isAdmin,
+        long eventSequence = 0)
+    {
+        ArgumentNullException.ThrowIfNull(flight);
+        ArgumentNullException.ThrowIfNull(prepared);
+        ArgumentNullException.ThrowIfNull(permissions);
         var isOwner = string.Equals(
             flight.CurrentUserAccess,
             Fleet.AircraftAccessLevels.Owner,
@@ -42,23 +67,25 @@ public sealed class FlightSnapshotFactory(
             flight.CurrentUserAccess,
             flight.ScopeType,
             flight.ScopeCode,
-            position.Latitude,
-            position.Longitude,
-            position.HeadingDeg,
+            prepared.Position.Latitude,
+            prepared.Position.Longitude,
+            prepared.Position.HeadingDeg,
+            prepared.Position.RoutePhase,
+            prepared.Position.RouteProgress,
             flight.SpeedKph,
             flight.RunId,
             flight.Scenario,
             flight.ScenarioLabel,
-            position.ScenarioElapsedMs,
+            prepared.Position.ScenarioElapsedMs,
             flight.ScenarioDurationMs,
-            FlightCondition.Classify(telemetry),
-            telemetry,
+            prepared.Condition,
+            prepared.Telemetry,
             flight.Version,
             flight.StartedAtUtc,
             flight.UpdatedAtUtc,
             canManage,
             canRemove,
-            0);
+            eventSequence);
     }
 
     private async Task<IReadOnlyList<SubsystemTelemetryDto>> GetTelemetryAsync(
@@ -91,6 +118,11 @@ public sealed class FlightSnapshotFactory(
     }
 
 }
+
+public sealed record FlightSnapshotData(
+    FlightPosition Position,
+    IReadOnlyList<SubsystemTelemetryDto> Telemetry,
+    string Condition);
 
 public static class FlightCondition
 {

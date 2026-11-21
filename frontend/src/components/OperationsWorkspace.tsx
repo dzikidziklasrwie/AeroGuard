@@ -1,4 +1,4 @@
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, memo, Suspense, type FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   createAircraft,
   createRole,
@@ -39,7 +39,11 @@ import {
 } from '../api/types';
 import { titleCase } from '../utils/format';
 import type { RunArchiveEntry } from '../types';
-import { OperationsMap } from './OperationsMap';
+
+const OperationsMap = lazy(async () => {
+  const module = await import('./OperationsMap');
+  return { default: module.OperationsMap };
+});
 
 type WorkspaceView = 'map' | 'fleet' | 'accounts' | 'audit';
 
@@ -523,7 +527,7 @@ function AuthenticatedWorkspace({ session, runs, onSignedOut }: { session: Acces
       {notice && <p className="workspace-message success" role="status">{notice}</p>}
       {loading ? <div className="workspace-loading" role="status"><span className="loader" />Loading account and fleet records...</div> : (
         <>
-          {view === 'map' && <OperationsMap token={session.token} currentUser={currentUser} aircraft={aircraft} runs={runs} onUnauthorized={onSignedOut} />}
+          {view === 'map' && <Suspense fallback={<div className="operations-map-loading" role="status"><span className="loader" />Loading map module...</div>}><OperationsMap token={session.token} currentUser={currentUser} aircraft={aircraft} runs={runs} onUnauthorized={onSignedOut} /></Suspense>}
           {view === 'fleet' && <FleetPanel token={session.token} currentUser={currentUser} aircraft={aircraft} users={users} busy={busy} runAction={runAction} refreshFleet={async () => { try { await refreshFleet(); } catch (requestError) { handleRequestError(requestError); } }} />}
           {view === 'accounts' && isAdmin && <AccountsPanel token={session.token} currentUser={currentUser} users={users} roles={roles} busy={busy} runAction={runAction} refreshAccounts={async () => { try { await refreshAccounts(); } catch (requestError) { handleRequestError(requestError); } }} />}
           {view === 'audit' && isAdmin && <AuditPanel records={audit} />}
@@ -533,7 +537,7 @@ function AuthenticatedWorkspace({ session, runs, onSignedOut }: { session: Acces
   );
 }
 
-export function OperationsWorkspace({ runs = [] }: { runs?: RunArchiveEntry[] }) {
+export const OperationsWorkspace = memo(function OperationsWorkspace({ runs = [] }: { runs?: RunArchiveEntry[] }) {
   const [session, setSession] = useState<AccessSession | null>(null);
   const signedOut = useCallback(() => setSession(null), []);
   const status = useMemo(() => session ? `Signed in as ${session.user.username}` : 'Sign-in required', [session]);
@@ -547,4 +551,4 @@ export function OperationsWorkspace({ runs = [] }: { runs?: RunArchiveEntry[] })
       {session ? <AuthenticatedWorkspace session={session} runs={runs} onSignedOut={signedOut} /> : <LoginPanel onAuthenticated={setSession} />}
     </section>
   );
-}
+});

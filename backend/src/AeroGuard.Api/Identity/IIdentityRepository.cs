@@ -8,6 +8,10 @@ public interface IIdentityRepository
 
     Task<IReadOnlyList<UserAccount>> GetUsersAsync(CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<long>> GetActiveUserIdsInRoleAsync(
+        string roleName,
+        CancellationToken cancellationToken = default);
+
     Task<UserAccount> CreateUserAsync(
         string username,
         string displayName,

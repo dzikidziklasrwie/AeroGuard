@@ -2929,6 +2929,13 @@ footer p:last-child {
   font-size: 0.86rem;
 }
 
+.placement-help {
+  margin: -4px 0 12px;
+  color: var(--text-soft);
+  font-size: 0.65rem;
+  line-height: 1.5;
+}
+
 .placement-fields {
   display: grid;
   grid-template-columns: repeat(4, minmax(88px, 1fr));
@@ -2960,12 +2967,34 @@ footer p:last-child {
   font-size: 0.69rem;
 }
 
+.country-search-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 14px;
+  margin-top: 10px;
+  padding: 9px 11px;
+  border: 1px solid rgba(95, 199, 223, 0.18);
+  border-radius: 5px;
+  background: rgba(95, 199, 223, 0.055);
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 0.58rem;
+}
+
+.country-search-details strong {
+  width: 100%;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.68rem;
+}
+
 .world-map-stage {
   position: relative;
   display: grid;
   min-height: 575px;
   place-items: center;
   overflow: hidden;
+  overscroll-behavior: contain;
   background:
     radial-gradient(circle at 52% 43%, rgba(28, 77, 97, 0.16), transparent 56%),
     linear-gradient(180deg, #07151f 0%, #06111a 100%);
@@ -2990,10 +3019,60 @@ footer p:last-child {
   height: auto;
   min-height: 410px;
   overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  overscroll-behavior: contain;
 }
 
 .world-map-stage.placement-active svg {
   cursor: crosshair;
+}
+
+.map-zoom-controls {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px;
+  border: 1px solid rgba(95, 199, 223, 0.24);
+  border-radius: 6px;
+  background: rgba(5, 15, 22, 0.9);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.24);
+}
+
+.map-zoom-controls button {
+  min-width: 30px;
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 1px solid rgba(95, 199, 223, 0.18);
+  border-radius: 4px;
+  background: rgba(95, 199, 223, 0.07);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  cursor: pointer;
+}
+
+.map-zoom-controls button:hover:not(:disabled),
+.map-zoom-controls button:focus-visible {
+  border-color: rgba(95, 199, 223, 0.48);
+  background: rgba(95, 199, 223, 0.14);
+}
+
+.map-zoom-controls button:disabled {
+  opacity: 0.36;
+  cursor: default;
+}
+
+.map-zoom-controls output {
+  min-width: 38px;
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 0.58rem;
+  text-align: right;
 }
 
 .map-sphere {
@@ -3013,6 +3092,40 @@ footer p:last-child {
   stroke: rgba(128, 179, 197, 0.27);
   stroke-width: 0.62;
   vector-effect: non-scaling-stroke;
+}
+
+.map-country-hitarea {
+  fill: transparent;
+  stroke: transparent;
+  stroke-width: 1.2;
+  cursor: crosshair;
+  vector-effect: non-scaling-stroke;
+  transition: fill 100ms ease, stroke 100ms ease;
+}
+
+.map-country-hitarea:hover,
+.map-country-hitarea:focus,
+.map-country-hitarea.selected {
+  fill: rgba(232, 188, 105, 0.38);
+  stroke: rgba(255, 213, 130, 0.95);
+}
+
+.country-hover-card rect {
+  fill: rgba(5, 15, 22, 0.96);
+  stroke: rgba(95, 199, 223, 0.42);
+  stroke-width: 1;
+}
+
+.country-hover-card text {
+  fill: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.country-hover-card .country-hover-name {
+  fill: var(--text);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .aircraft-marker {
@@ -3064,12 +3177,6 @@ footer p:last-child {
 
 .aircraft-marker.active {
   filter: url(#marker-glow);
-}
-
-.marker-aircraft {
-  fill: #eafaff;
-  pointer-events: none;
-  transform-origin: center;
 }
 
 .marker-label {
@@ -3279,6 +3386,47 @@ footer p:last-child {
   color: var(--text-soft);
   font-family: var(--mono);
   font-size: 0.63rem;
+}
+
+.route-progress {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.route-progress span {
+  color: var(--text-soft);
+  font-family: var(--mono);
+  font-size: 0.6rem;
+}
+
+.route-progress progress {
+  width: 100%;
+  height: 5px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(128, 179, 197, 0.14);
+}
+
+.route-progress progress::-webkit-progress-bar {
+  background: rgba(128, 179, 197, 0.14);
+}
+
+.route-progress progress::-webkit-progress-value {
+  background: var(--accent-bright);
+}
+
+.route-progress progress::-moz-progress-bar {
+  background: var(--accent-bright);
+}
+
+.route-patrol progress::-webkit-progress-value {
+  background: var(--nominal);
+}
+
+.route-patrol progress::-moz-progress-bar {
+  background: var(--nominal);
 }
 
 .flight-scenario,

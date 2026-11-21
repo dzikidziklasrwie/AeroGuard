@@ -15,6 +15,8 @@ public sealed class OperationsConnectionRegistry(
     private readonly ConcurrentDictionary<string, OperationsConnection> _connections =
         new(StringComparer.Ordinal);
 
+    public bool HasConnections => !_connections.IsEmpty;
+
     public void Register(string connectionId, long userId, long sessionId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionId);
@@ -29,10 +31,19 @@ public sealed class OperationsConnectionRegistry(
 
     public async Task<IReadOnlyList<string>> GetActiveConnectionIdsAsync(
         IReadOnlyCollection<long> userIds,
+        CancellationToken cancellationToken = default) =>
+        (await GetActiveConnectionsAsync(userIds, cancellationToken))
+        .Select(connection => connection.ConnectionId)
+        .ToArray();
+
+    public async Task<IReadOnlyList<OperationsConnection>> GetActiveConnectionsAsync(
+        IReadOnlyCollection<long> userIds,
         CancellationToken cancellationToken = default)
     {
         var allowedUsers = userIds.ToHashSet();
-        var active = new List<string>();
+        var active = new List<OperationsConnection>();
+        var sessionStates = new Dictionary<long, bool>();
+        var now = timeProvider.GetUtcNow();
         foreach (var connection in _connections.Values)
         {
             if (!allowedUsers.Contains(connection.UserId))
@@ -40,12 +51,18 @@ public sealed class OperationsConnectionRegistry(
                 continue;
             }
 
-            if (await identityRepository.IsSessionActiveAsync(
-                    connection.SessionId,
-                    timeProvider.GetUtcNow(),
-                    cancellationToken))
+            if (!sessionStates.TryGetValue(connection.SessionId, out var isActive))
             {
-                active.Add(connection.ConnectionId);
+                isActive = await identityRepository.IsSessionActiveAsync(
+                    connection.SessionId,
+                    now,
+                    cancellationToken);
+                sessionStates[connection.SessionId] = isActive;
+            }
+
+            if (isActive)
+            {
+                active.Add(connection);
             }
             else
             {
