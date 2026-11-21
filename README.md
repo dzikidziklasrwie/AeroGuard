@@ -39,7 +39,7 @@ Repository: [github.com/dzikidziklasrwie/AeroGuard](https://github.com/dzikidzik
 | Access control | Revocable opaque sessions, roles, aircraft assignments, per-account operation permissions, protected invariants, and audit records |
 | Simulated operations | Packaged Natural Earth map, destination-based continent routes, route phase/progress, role-aware chat, and session-checked SignalR updates |
 | Map interaction | Validated coordinates, bounded transit and patrol, last-valid-position recovery, sphere-clipped markers, 1x-6x zoom, pan, reset, and selected-aircraft focus |
-| Scenario-linked map effects | Each flight keeps a visible tail-number identity and receives deterministic scenario visuals derived from its stored telemetry timeline |
+| Scenario-linked map effects | Each flight keeps a visible identity, ground shadow, selected-aircraft card, and deterministic visuals derived from its stored telemetry timeline |
 | UI separation | React reads stored C++ output through REST or a static fallback; it doesn't recreate thresholds or state transitions |
 | Work reduction | Idle broadcasts stop before database reads, flight data is prepared once per update, replay state is derived in one pass, and the map module loads on demand |
 | Delivery | CMake presets, Windows/Linux CI, xUnit, clang-tidy, ASan/UBSan, Dependabot, and multi-stage Docker |
@@ -83,9 +83,9 @@ Observed locally on 2026-11-21:
 
 | Check | Result |
 |---|---|
-| Current native feature suite | 45/45 CTest checks passed, including all seven 40-to-55-second scenarios |
-| ASP.NET Core / SQLite | 63/63 xUnit test cases passed |
-| React / TypeScript | `npm ci`, lint, typecheck, 42/42 Vitest tests in 10 files, and production build passed |
+| Current native feature suite | 45/45 CTest checks passed, including all seven 40-to-105-second scenarios |
+| ASP.NET Core / SQLite | 67/67 xUnit test cases passed |
+| React / TypeScript | `npm ci`, lint, typecheck, 47/47 Vitest tests in 10 files, and production build passed |
 | Dependency audit | 0 known npm vulnerabilities reported |
 | Current Docker/browser path | API and dashboard images built; Compose reported both services healthy; Chrome completed the nginx WebSocket handshake and received four SignalR frames |
 | Previous hosted revision | GitHub Actions passed MSVC, GCC, ASan/UBSan, clang-tidy, frontend, API, and Docker jobs on the preceding `main` revision |
@@ -114,7 +114,8 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Open [http://localhost:8080](http://localhost:8080). The replay selector covers
+Open [http://localhost:8080](http://localhost:8080). The `Public replay scenario`
+selector covers
 normal operation, communications loss, bad sensor data, overheating, power
 fluctuation, multiple failures, and temporary-fault recovery. The selected run
 plays automatically and loops until another run is chosen. Sign in to the
@@ -123,24 +124,33 @@ audit records. The signed-in workspace opens on a simulated world map with
 assigned flights, stored C++ telemetry, flight chat, and authorized controls.
 Account roles and aircraft assignments are separate: `Operator`, `Maintainer`,
 and `Viewer` define account capabilities, while `OWNER`, `MAINTAINER`, and
-`VIEWER` define access to a specific aircraft.
+`VIEWER` define access to a specific aircraft. Only an administrator can assign
+an existing aircraft to another account or change that assignment.
 Coordinates define a route's start. A continent selection defines its
 destination: the marker follows a great-circle `TRANSIT` for at most 30 seconds,
 then enters a bounded `PATROL`. The map supports zoom, pan, reset, and focus on
-the selected aircraft. Country routes remain local bounded patrols; they don't
-claim political-border containment.
-Every map marker keeps its tail number visible and uses an aircraft silhouette
-plus a short fading contrail. Its visual state follows the scenario assigned
-to that specific flight: communication loss adds signal rings, invalid sensor
-data adds an amber alert, power fluctuation adds electrical arcs, simultaneous
-failures add smoke and fault pulses, temporary recovery adds a green recovery
-ring, and prolonged overheating adds fire, debris and a land-impact burst.
-Overheating over water produces splash and sinking debris rather than a ground
-explosion. These are fictional presentation effects derived from scenario
-timelines; they don't control or affect real aircraft.
+the selected aircraft. Country routes use bounded catalog profiles plus a
+local fallback; they don't claim political-border containment.
+Every marker links a map-position shadow to its aircraft silhouette and keeps
+the tail number visible. A selected-aircraft card repeats the tail number,
+display name, assigned scenario, and active effect. Communication loss adds
+signal rings, invalid sensor data adds an amber alert, power fluctuation adds
+electrical arcs, simultaneous failures add smoke and fault pulses, and recovery
+adds a green ring. The 105-second overheating replay shows sustained heat,
+fire from 60 to 80 seconds, airframe breakup, descending debris, and impact.
+Land receives an impact burst and wreckage; water receives a splash and
+floating debris without a second explosion. The route holds at the breakup
+point until that replay cycle restarts. These are fictional presentation
+effects, not a physical crash or flight-dynamics model.
 Compose synchronizes the configured administrator password at API startup, so
 editing `.env` and recreating the API container updates that login and revokes
-its older sessions.
+its older sessions. Changing the public replay selector keeps an authenticated
+Operations Workspace mounted and doesn't discard its in-memory session.
+
+To change one aircraft's scenario, sign in, open the map, select the aircraft
+by its marker or flight-board row, choose a run under `Change scenario for
+<tail number>`, and select `Apply scenario`. This control changes only the
+selected aircraft; its destination and patrol area stay unchanged.
 
 For a native debug build:
 
@@ -163,7 +173,7 @@ for prerequisites, frontend commands, install steps, sanitizers, and troubleshoo
 | `normal-operation` | 40 s | None | Startup reaches normal health and remains stable. |
 | `communication-interruption` | 45 s | Missing communications telemetry | Heartbeat loss is detected while other subsystems keep reporting. |
 | `invalid-sensor-data` | 45 s | Invalid temperature sample | Validation records the rejected reading and its health effect. |
-| `simulated-overheating` | 45 s | Rising thermal condition | Temperature/cooling health degrades and can reach fault. |
+| `simulated-overheating` | 105 s | Sustained thermal fault | Temperature health remains in fault while the map progresses through heat, fire, breakup, debris, and impact phases. |
 | `power-fluctuations` | 45 s | Voltage/frequency variation | Power quality crosses health thresholds. |
 | `multiple-subsystem-failures` | 55 s | Concurrent injected faults | Aggregate state reflects compounded subsystem failures. |
 | `recovery-after-temporary-failure` | 45 s | Time-bounded fault | Health passes through `RECOVERY` before a steady state. |
@@ -209,7 +219,7 @@ docs/                One project guide plus portfolio images
 [AeroGuard project guide](docs/PROJECT-GUIDE.md) is the single detailed
 document. It contains the user manual, build instructions, architecture,
 telemetry and state contracts, security rules, requirements, test evidence,
-design decisions, `REQ-001` through `REQ-055`, limitations, CV wording,
+design decisions, `REQ-001` through `REQ-058`, limitations, CV wording,
 interview notes, and image
 provenance. [TASKS.md](TASKS.md) retains the command-level completion record.
 
