@@ -49,6 +49,8 @@ Snapshot date: 2026-11-21
   layer, and inward-facing edge labels.
 - [x] Always-visible tail-number markers, linked map shadows, selected-aircraft
   card, fading contrails, and scenario-specific fault animations.
+- [x] Accessible selected-aircraft scenario menu with a downward dark panel,
+  active-run state, keyboard controls, and reduced-motion handling.
 - [x] Sustained overheating, 20-second fire, airframe breakup, deterministic
   debris descent, land impact and wreckage, or water splash and floating debris.
 - [x] A selected-aircraft scenario control that preserves the flight's

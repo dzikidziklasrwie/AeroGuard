@@ -404,6 +404,7 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
   const [messageText, setMessageText] = useState('');
   const [shareType, setShareType] = useState<ChatShareType>('TEXT');
   const [scenarioChoice, setScenarioChoice] = useState<{ flightId: number; runId: string } | null>(null);
+  const [scenarioMenuOpen, setScenarioMenuOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -856,6 +857,7 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
       setFlights((current) => current.map((flight) =>
         flight.id === saved.id ? saved : flight));
       setScenarioChoice({ flightId: saved.id, runId: String(saved.run_id) });
+      setScenarioMenuOpen(false);
       setNotice(`${saved.scenario_label ?? titleCase(saved.scenario ?? 'Scenario')} assigned to ${saved.tail_number}.`);
     } catch (requestError) {
       handleMapOperationError(requestError);
@@ -1231,7 +1233,62 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
               </div>
               <div className="flight-scenario"><span>Assigned scenario</span><strong>{selectedFlight.scenario_label ?? titleCase(selectedFlight.scenario ?? 'Session demo')}</strong><small>{selectedFlight.run_id > 0 ? `Run #${selectedFlight.run_id} / ${selectedFlight.tail_number}` : 'Session data'}</small></div>
               {selectedFlight.can_manage && availableRuns.length > 0 && <form className="flight-scenario-assignment" onSubmit={assignScenario}>
-                <label><span>Change scenario for {selectedFlight.tail_number}</span><select aria-label={`Scenario assigned to ${selectedFlight.tail_number}`} value={scenarioRunId} onChange={(event) => setScenarioChoice({ flightId: selectedFlight.id, runId: event.target.value })}>{availableRuns.map((run) => <option value={run.id} key={run.id}>{run.label} / run {run.id}</option>)}{!availableRuns.some((run) => run.id === selectedFlight.run_id) && <option value={selectedFlight.run_id}>{selectedFlight.scenario_label ?? `Current run ${selectedFlight.run_id}`}</option>}</select></label>
+                <div className="scenario-dropdown-field">
+                  <span>Change scenario for {selectedFlight.tail_number}</span>
+                  <div className={`scenario-dropdown${scenarioMenuOpen ? ' open' : ''}`} onBlur={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget)) setScenarioMenuOpen(false);
+                  }}>
+                    <button
+                      type="button"
+                      className="scenario-dropdown-trigger"
+                      aria-label={`Scenario assigned to ${selectedFlight.tail_number}`}
+                      aria-haspopup="listbox"
+                      aria-expanded={scenarioMenuOpen}
+                      aria-controls={`scenario-options-${selectedFlight.id}`}
+                      onClick={() => setScenarioMenuOpen((open) => !open)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'ArrowDown') {
+                          event.preventDefault();
+                          setScenarioMenuOpen(true);
+                        }
+                        if (event.key === 'Escape') setScenarioMenuOpen(false);
+                      }}
+                    >
+                      <span>
+                        <strong>{availableRuns.find((run) => String(run.id) === scenarioRunId)?.label ?? selectedFlight.scenario_label ?? 'Current scenario'}</strong>
+                        <small>Run #{scenarioRunId}</small>
+                      </span>
+                      <i aria-hidden="true" />
+                    </button>
+                    {scenarioMenuOpen && <div className="scenario-dropdown-menu" id={`scenario-options-${selectedFlight.id}`} role="listbox" aria-label={`Available scenarios for ${selectedFlight.tail_number}`}>
+                      {availableRuns.map((run) => <button
+                        type="button"
+                        role="option"
+                        aria-selected={String(run.id) === scenarioRunId}
+                        className={String(run.id) === scenarioRunId ? 'selected' : ''}
+                        key={run.id}
+                        onClick={() => {
+                          setScenarioChoice({ flightId: selectedFlight.id, runId: String(run.id) });
+                          setScenarioMenuOpen(false);
+                        }}
+                      >
+                        <span className={`scenario-option-state state-${run.final_state.toLowerCase()}`} aria-hidden="true" />
+                        <span><strong>{run.label}</strong><small>Run #{run.id} / {Math.round(run.duration_ms / 1000)} s</small></span>
+                        {String(run.id) === scenarioRunId && <span className="scenario-option-check" aria-hidden="true">&#10003;</span>}
+                      </button>)}
+                      {!availableRuns.some((run) => run.id === selectedFlight.run_id) && <button
+                        type="button"
+                        role="option"
+                        aria-selected={String(selectedFlight.run_id) === scenarioRunId}
+                        className={String(selectedFlight.run_id) === scenarioRunId ? 'selected' : ''}
+                        onClick={() => {
+                          setScenarioChoice({ flightId: selectedFlight.id, runId: String(selectedFlight.run_id) });
+                          setScenarioMenuOpen(false);
+                        }}
+                      ><span className="scenario-option-state state-normal" aria-hidden="true" /><span><strong>{selectedFlight.scenario_label ?? `Current run ${selectedFlight.run_id}`}</strong><small>Current aircraft run</small></span></button>}
+                    </div>}
+                  </div>
+                </div>
                 <button type="submit" className="button secondary-button" disabled={busy || Number(scenarioRunId) === selectedFlight.run_id}>Apply scenario</button>
                 <small>This changes only the selected aircraft's replay and map effect. Its destination remains the same.</small>
               </form>}

@@ -190,9 +190,11 @@ effect. The run chosen while placing or reconfiguring a flight affects only
 that aircraft.
 
 For an active flight, the `Change scenario for <tail number>` control changes
-only its recorded run and restarts that scenario. The API preserves the
-current position, destination, patrol scope, and speed. Optimistic concurrency
-rejects a stale selection instead of overwriting another user's change.
+only its recorded run and restarts that scenario. Its dark scenario menu opens
+below the control, identifies each run and duration, and marks the current
+choice. The API preserves the current position, destination, patrol scope, and
+speed. Optimistic concurrency rejects a stale selection instead of overwriting
+another user's change.
 
 Communication, invalid-sensor, power, multiple-failure, and recovery replays
 use distinct signal, warning, electrical, smoke, and recovery animations. The

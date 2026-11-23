@@ -3879,28 +3879,168 @@ footer p:last-child {
   background: rgba(110, 214, 173, 0.04);
 }
 
-.flight-scenario-assignment label {
+.scenario-dropdown-field {
   display: grid;
   gap: 5px;
 }
 
-.flight-scenario-assignment label > span,
+.scenario-dropdown-field > span,
 .flight-scenario-assignment small {
   color: var(--text-muted);
   font-size: 0.72rem;
   line-height: 1.45;
 }
 
-.flight-scenario-assignment select {
+.scenario-dropdown {
+  position: relative;
+  z-index: 8;
+}
+
+.scenario-dropdown-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   width: 100%;
-  min-height: 38px;
-  padding: 7px 28px 7px 9px;
-  border: 1px solid var(--line-strong);
-  border-radius: 4px;
-  background: var(--surface-strong);
+  min-height: 48px;
+  padding: 8px 12px;
+  border: 1px solid rgba(110, 214, 173, 0.28);
+  border-radius: 7px;
+  background:
+    linear-gradient(135deg, rgba(110, 214, 173, 0.1), transparent 55%),
+    rgba(8, 22, 30, 0.98);
   color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.025);
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.scenario-dropdown-trigger:hover,
+.scenario-dropdown.open .scenario-dropdown-trigger {
+  border-color: rgba(110, 214, 173, 0.65);
+  box-shadow: 0 0 0 3px rgba(110, 214, 173, 0.08), inset 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.scenario-dropdown-trigger:focus-visible {
+  outline: 2px solid var(--accent-bright);
+  outline-offset: 2px;
+}
+
+.scenario-dropdown-trigger > span,
+.scenario-dropdown-menu button > span:nth-child(2) {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.scenario-dropdown-trigger strong,
+.scenario-dropdown-menu strong {
   font-family: var(--mono);
-  font-size: 0.72rem;
+  font-size: 0.7rem;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.scenario-dropdown-trigger small,
+.scenario-dropdown-menu small {
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 0.58rem;
+}
+
+.scenario-dropdown-trigger > i {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  margin: -4px 3px 0 0;
+  border-right: 1.5px solid var(--nominal);
+  border-bottom: 1.5px solid var(--nominal);
+  transform: rotate(45deg);
+  transition: transform 160ms ease, margin 160ms ease;
+}
+
+.scenario-dropdown.open .scenario-dropdown-trigger > i {
+  margin-top: 4px;
+  transform: rotate(225deg);
+}
+
+.scenario-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  left: 0;
+  z-index: 40;
+  display: grid;
+  gap: 3px;
+  max-height: 276px;
+  padding: 6px;
+  overflow-y: auto;
+  border: 1px solid rgba(110, 214, 173, 0.34);
+  border-radius: 8px;
+  background: rgba(5, 16, 23, 0.995);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.025) inset;
+  animation: scenario-menu-in 140ms ease-out both;
+}
+
+.scenario-dropdown-menu button {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 46px;
+  padding: 7px 9px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-soft);
+  text-align: left;
+  cursor: pointer;
+}
+
+.scenario-dropdown-menu button:hover,
+.scenario-dropdown-menu button:focus-visible {
+  border-color: rgba(110, 214, 173, 0.2);
+  outline: none;
+  background: rgba(110, 214, 173, 0.08);
+  color: var(--text);
+}
+
+.scenario-dropdown-menu button.selected {
+  border-color: rgba(110, 214, 173, 0.34);
+  background: linear-gradient(90deg, rgba(110, 214, 173, 0.14), rgba(110, 214, 173, 0.035));
+  color: var(--text);
+}
+
+.scenario-option-state {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--nominal);
+  box-shadow: 0 0 8px rgba(110, 214, 173, 0.5);
+}
+
+.scenario-option-state.state-fault {
+  background: var(--critical);
+  box-shadow: 0 0 8px rgba(255, 111, 97, 0.52);
+}
+
+.scenario-option-check {
+  color: var(--nominal);
+  font-size: 0.82rem;
+  text-align: center;
+}
+
+@keyframes scenario-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-5px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .flight-scenario-assignment .button {
@@ -4732,6 +4872,7 @@ footer p:last-child {
 
   .marker-contrail,
   .scenario-effect *,
+  .scenario-dropdown-menu,
   .marker-contrail * {
     animation: none !important;
   }

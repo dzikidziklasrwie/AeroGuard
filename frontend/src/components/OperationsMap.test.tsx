@@ -264,7 +264,14 @@ describe('OperationsMap', () => {
     render(<OperationsMap token="session-token" currentUser={owner} aircraft={aircraft} runs={runs} onUnauthorized={vi.fn()} />);
 
     await screen.findByRole('button', { name: /N204AG, simulated position/ });
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Scenario assigned to N204AG' }), '12');
+    const scenarioTrigger = screen.getByRole('button', { name: 'Scenario assigned to N204AG' });
+    await user.click(scenarioTrigger);
+    expect(scenarioTrigger).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('listbox', { name: 'Available scenarios for N204AG' })).toBeInTheDocument();
+    await user.click(screen.getByRole('option', { name: /Simulated overheating/ }));
+    expect(scenarioTrigger).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('listbox', { name: 'Available scenarios for N204AG' })).not.toBeInTheDocument();
+    expect(scenarioTrigger).toHaveTextContent('Simulated overheating');
     await user.click(screen.getByRole('button', { name: 'Apply scenario' }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/operations/flights/44/scenario', expect.objectContaining({
