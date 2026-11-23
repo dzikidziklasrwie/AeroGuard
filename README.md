@@ -105,14 +105,29 @@ records the command evidence.
 ## Run the demo
 
 Docker is the shortest path. Copy the environment template and replace the
-administrator password first. The build compiles the C++ producer, generates
-all seven replays, publishes the API, builds React, and starts the integrated
-stack:
+administrator password first. The regular stack build reuses the seven
+verified replay artifacts under `frontend/public/data`, publishes the API,
+builds React, and starts the integrated stack. Routine UI and API builds no
+longer compile the C++ toolchain:
 
 ```bash
 cp .env.example .env
 docker compose up --build
 ```
+
+After the stack is running, rebuild only the service you changed:
+
+```bash
+docker compose build dashboard
+docker compose up -d --no-deps dashboard
+
+docker compose build api
+docker compose up -d --no-deps api
+```
+
+Use `docker compose --profile tools build simulator` only after changing the
+C++ engine or scenario definitions. CI still compiles C++, exports fresh
+replays, and verifies the checked-in producer-consumer contract.
 
 Open [http://localhost:8080](http://localhost:8080). The `Public replay scenario`
 selector covers

@@ -16,7 +16,7 @@ Snapshot date: 2026-11-21
 | ASP.NET Core API, SQLite, accounts, fleet, and simulated operations | Minimal API, archive importer, bearer sessions, administrator-controlled assignments, destination routing, operation permissions, active flights, chat, session-aware SignalR delivery, and audit records | Current xUnit suite passed 67/67 |
 | Documentation and CV material | User manual, requirements, design, build, tests, trade-offs, interview notes, and measured CV copy | Cross-checked against the current code and results |
 | Windows/Linux GitHub Actions | Workflow defines MSVC, GCC, sanitizers, clang-tidy, frontend, backend, and Docker jobs with Node 24 action runtimes and explicit timeouts | Run `44854113152` passed all seven jobs on implementation commit `47d38c5` |
-| Multi-stage Docker demo | Simulator data generation, .NET API, React build, nginx, SignalR proxy, and SQLite volume | Previous integrated images became healthy; Chrome completed one nginx WebSocket handshake and received four SignalR frames |
+| Multi-stage Docker demo | Independent simulator, .NET API, React, nginx, SignalR proxy, and SQLite stages | API/dashboard cached rebuild measured 3.5 seconds locally; both services became healthy and exposed all seven replays |
 | Portfolio visuals | Generated hero plus real dashboard and operations-map captures with provenance | Production dashboard captured at 1600 x 1200; authenticated map workspace captured at 1446 x 904 |
 
 ## Implementation checklist
@@ -62,6 +62,8 @@ Snapshot date: 2026-11-21
 - [x] Idle broadcaster exit, batched active-recipient checks, one prepared
   flight snapshot per update, single-pass replay state, and lazy map loading.
 - [x] Loopback-only direct Compose API port and one-hop nginx forwarded headers.
+- [x] Independent cached Docker build paths: routine API and dashboard builds
+  reuse verified replay artifacts; the simulator remains an explicit target.
 - [x] Authentic C++ replay artifacts and producer-consumer contract test.
 - [x] Seven regenerated 40-to-105-second replay artifacts and duration checks.
 - [x] Functional requirements `REQ-001` through `REQ-058` and traceability.
