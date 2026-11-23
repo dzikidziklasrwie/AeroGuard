@@ -53,6 +53,8 @@ Snapshot date: 2026-11-21
   active-run state, keyboard controls, and reduced-motion handling.
 - [x] Sustained overheating, 20-second fire, airframe breakup, deterministic
   debris descent, land impact and wreckage, or water splash and floating debris.
+- [x] High-contrast communication, thermal, fire, power, recovery, breakup,
+  land-impact, and water-impact effects that remain visible over the world map.
 - [x] A selected-aircraft scenario control that preserves the flight's
   destination and makes the target tail number explicit.
 - [x] Continent-as-destination routing, great-circle `TRANSIT` capped at 30

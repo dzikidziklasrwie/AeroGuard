@@ -204,11 +204,19 @@ describe('OperationsMap', () => {
       scenario_elapsed_ms: 65_000,
       scenario_duration_ms: 105_000,
     };
-    vi.stubGlobal('fetch', apiMock({ flights: [overheating] }));
+    const communication = { ...flight, id: 45, tail_number: 'N305AG', scenario: 'communication-interruption', scenario_label: 'Communication interruption', scenario_elapsed_ms: 15_000 };
+    const power = { ...flight, id: 46, tail_number: 'N406AG', scenario: 'power-fluctuations', scenario_label: 'Power fluctuations', scenario_elapsed_ms: 15_000 };
+    const recovery = { ...flight, id: 47, tail_number: 'N507AG', scenario: 'recovery-after-temporary-failure', scenario_label: 'Recovery after temporary failure', scenario_elapsed_ms: 15_000 };
+    vi.stubGlobal('fetch', apiMock({ flights: [overheating, communication, power, recovery] }));
     render(<OperationsMap token="session-token" currentUser={owner} aircraft={aircraft} runs={runs} onUnauthorized={vi.fn()} />);
 
     const marker = await screen.findByRole('button', { name: /N204AG, simulated position/ });
     expect(marker.querySelector('.scenario-fire')).toBeInTheDocument();
+    expect(marker.querySelector('.fire-glow')).toBeInTheDocument();
+    expect(marker.querySelectorAll('.ember')).toHaveLength(3);
+    expect(screen.getByRole('button', { name: /N305AG, simulated position/ }).querySelectorAll('.radio-ring')).toHaveLength(3);
+    expect(screen.getByRole('button', { name: /N406AG, simulated position/ }).querySelectorAll('.power-arc')).toHaveLength(3);
+    expect(screen.getByRole('button', { name: /N507AG, simulated position/ }).querySelector('.recovery-check')).toBeInTheDocument();
     expect(screen.getByText('Simulated overheating / Aircraft fire')).toBeInTheDocument();
     await waitFor(() => expect(hubMocks.connect).toHaveBeenCalled());
     const handlers = hubMocks.connect.mock.calls[0][1];

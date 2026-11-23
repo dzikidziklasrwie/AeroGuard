@@ -136,11 +136,14 @@ the selected aircraft. Country routes use bounded catalog profiles plus a
 local fallback; they don't claim political-border containment.
 Every marker links a map-position shadow to its aircraft silhouette and keeps
 the tail number visible. A selected-aircraft card repeats the tail number,
-display name, assigned scenario, and active effect. Communication loss adds
-signal rings, invalid sensor data adds an amber alert, power fluctuation adds
-electrical arcs, simultaneous failures add smoke and fault pulses, and recovery
-adds a green ring. The 105-second overheating replay shows sustained heat,
-fire from 60 to 80 seconds, airframe breakup, descending debris, and impact.
+display name, assigned scenario, and active effect. Communication loss surrounds
+the aircraft with three wide signal rings and a red disconnect mark. Invalid
+sensor data adds an amber alert, power fluctuation sends bright electrical arcs
+between pulsing nodes, and simultaneous failures add smoke and fault pulses.
+Recovery adds a green wash, orbit, confirmation mark, and moving particles. The
+105-second overheating replay starts with a heat halo and rising waves. Fire
+then wraps around the aircraft from 60 to 80 seconds, with smoke and embers,
+before airframe breakup, descending debris, and impact.
 Land receives an impact burst and wreckage; water receives a splash and
 floating debris without a second explosion. The route holds at the breakup
 point until that replay cycle restarts. These are fictional presentation

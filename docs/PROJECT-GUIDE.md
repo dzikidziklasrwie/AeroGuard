@@ -196,10 +196,13 @@ choice. The API preserves the current position, destination, patrol scope, and
 speed. Optimistic concurrency rejects a stale selection instead of overwriting
 another user's change.
 
-Communication, invalid-sensor, power, multiple-failure, and recovery replays
-use distinct signal, warning, electrical, smoke, and recovery animations. The
-105-second overheating replay shows heat from 10 to 60 seconds, fire from 60
-to 80 seconds, airframe breakup, descending debris, and impact. Motion holds
+Communication loss uses three wide signal rings and a red disconnect mark.
+Invalid sensor data uses an amber warning. Power fluctuation sends bright arcs
+between pulsing nodes, while multiple failures combine smoke and fault pulses.
+Recovery uses a green wash, orbit, confirmation mark, and moving particles. The
+105-second overheating replay shows a heat halo and rising waves from 10 to 60
+seconds. Fire wraps around the aircraft from 60 to 80 seconds, with smoke and
+embers, before airframe breakup, descending debris, and impact. Motion holds
 at the breakup point for the rest of that replay cycle. Land shows an impact
 burst and wreckage. Water shows a splash and floating debris without a second
 explosion. These deterministic visuals are fictional presentation states, not

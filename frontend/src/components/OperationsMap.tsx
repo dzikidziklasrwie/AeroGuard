@@ -1133,28 +1133,35 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
                         </g>
                       </>}
                       {effect === 'communication' && <g className="scenario-effect scenario-communication" aria-hidden="true">
-                        <path d="M-17 2 A18 18 0 0 1 17 2" />
-                        <path d="M-11 7 A11 11 0 0 1 11 7" />
-                        <circle cx="0" cy="10" r="2" />
+                        <circle className="radio-ring radio-ring-outer" cx="0" cy="0" r="42" />
+                        <circle className="radio-ring radio-ring-middle" cx="0" cy="0" r="30" />
+                        <circle className="radio-ring radio-ring-inner" cx="0" cy="0" r="19" />
+                        <path className="radio-signal" d="M-13-18 A22 22 0 0 1 13-18 M-8-12 A13 13 0 0 1 8-12" />
+                        <path className="radio-cut" d="M-31-31 L31 31" />
                       </g>}
                       {effect === 'sensor' && <g className="scenario-effect scenario-sensor" aria-hidden="true">
                         <path d="M0-17 L-5-7 L2-5 L-3 8" />
                         <circle cx="-12" cy="-10" r="2" /><circle cx="12" cy="8" r="2" />
                       </g>}
                       {effect === 'thermal' && <g className="scenario-effect scenario-thermal" aria-hidden="true">
-                        <path d="M-13 16 C-18 9 -7 4 -13-4" /><path d="M0 18 C-5 10 6 5 0-4" /><path d="M13 16 C8 9 19 4 13-4" />
-                        <circle className="thermal-halo" cx="0" cy="0" r="18" />
+                        <circle className="thermal-halo thermal-halo-outer" cx="0" cy="0" r="32" />
+                        <circle className="thermal-core" cx="0" cy="0" r="20" />
+                        <path className="heat-wave" d="M-23 20 C-31 10 -17 3 -23-10" /><path className="heat-wave" d="M-8 25 C-16 13 1 4 -8-12" /><path className="heat-wave" d="M8 25 C0 13 17 4 8-12" /><path className="heat-wave" d="M23 20 C15 10 30 3 23-10" />
                       </g>}
                       {effect === 'fire' && <g className="scenario-effect scenario-fire" aria-hidden="true">
-                        <path className="flame flame-large" d="M0 8 C-12 18 -8 34 0 42 C9 34 13 19 0 8Z" />
-                        <path className="flame flame-small" d="M-9 10 C-16 16 -13 25 -7 30 C-3 23 -3 15 -9 10Z" />
-                        <path className="flame flame-small" d="M9 10 C16 16 13 25 7 30 C3 23 3 15 9 10Z" />
-                        <circle className="smoke" cx="-5" cy="39" r="5" /><circle className="smoke" cx="6" cy="43" r="4" />
+                        <circle className="fire-glow" cx="0" cy="0" r="31" />
+                        <path className="flame flame-large" d="M0 20 C-16 10 -17-5 -6-20 C-5-8 1-9 3-27 C17-10 16 8 0 20Z" />
+                        <path className="flame flame-small flame-left" d="M-12 17 C-25 7 -22-8 -14-16 C-13-7 -7-5 -5-19 C2-5 -2 10 -12 17Z" />
+                        <path className="flame flame-small flame-right" d="M12 17 C25 7 22-8 14-16 C13-7 7-5 5-19 C-2-5 2 10 12 17Z" />
+                        <circle className="smoke smoke-1" cx="-9" cy="-23" r="8" /><circle className="smoke smoke-2" cx="7" cy="-27" r="7" /><circle className="smoke smoke-3" cx="0" cy="-35" r="9" />
+                        <circle className="ember ember-1" cx="-18" cy="2" r="2" /><circle className="ember ember-2" cx="18" cy="-4" r="1.8" /><circle className="ember ember-3" cx="8" cy="16" r="1.5" />
                       </g>}
                       {effect === 'power' && <g className="scenario-effect scenario-power" aria-hidden="true">
-                        <path d="M-20-8 L-12-2 L-19 5 L-8 10" />
-                        <path d="M18-12 L10-5 L17 3 L7 9" />
-                        <circle cx="-8" cy="-14" r="2" /><circle cx="12" cy="-16" r="2" />
+                        <circle className="power-halo" cx="0" cy="0" r="34" />
+                        <path className="power-arc arc-1" d="M-35-17 L-22-12 L-29-2 L-15 1 L-22 13 L-8 17" />
+                        <path className="power-arc arc-2" d="M34-20 L21-13 L29-5 L15 1 L23 11 L8 18" />
+                        <path className="power-arc arc-3" d="M-25 27 L-13 19 L-8 28 L0 17 L8 28 L15 18 L27 25" />
+                        <circle className="power-node node-1" cx="-31" cy="-18" r="3" /><circle className="power-node node-2" cx="31" cy="-20" r="3" /><circle className="power-node node-3" cx="0" cy="24" r="3" />
                       </g>}
                       {effect === 'multiple' && <g className="scenario-effect scenario-multiple" aria-hidden="true">
                         <circle cx="-9" cy="-14" r="5" /><circle cx="8" cy="-12" r="7" />
@@ -1162,12 +1169,18 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
                         <circle className="smoke" cx="-14" cy="-24" r="4" /><circle className="smoke" cx="12" cy="-25" r="5" />
                       </g>}
                       {effect === 'recovery' && <g className="scenario-effect scenario-recovery" aria-hidden="true">
-                        <circle cx="0" cy="0" r="21" /><circle cx="0" cy="0" r="15" />
+                        <circle className="recovery-wash" cx="0" cy="0" r="30" />
+                        <circle className="recovery-ring recovery-ring-outer" cx="0" cy="0" r="38" />
+                        <circle className="recovery-ring recovery-ring-inner" cx="0" cy="0" r="25" />
+                        <path className="recovery-orbit" d="M-27 0 A27 27 0 1 1 7 26" />
+                        <path className="recovery-check" d="M-12 0 L-3 10 L15-13" />
+                        <circle className="recovery-particle particle-1" cx="-29" cy="-19" r="2.5" /><circle className="recovery-particle particle-2" cx="31" cy="-10" r="2" /><circle className="recovery-particle particle-3" cx="18" cy="29" r="2.3" />
                       </g>}
                       {effect === 'airburst' && <g className="scenario-effect scenario-airburst" aria-hidden="true">
-                        <circle className="airburst-wave" cx="0" cy="0" r="11" />
-                        <circle className="airburst-core" cx="0" cy="0" r="7" />
-                        <path d="M0-8 L0-28 M7-5 L23-19 M9 2 L29 8 M-7-5 L-23-19 M-9 2 L-29 8 M0 8 L0 27" />
+                        <circle className="airburst-wave wave-outer" cx="0" cy="0" r="18" />
+                        <circle className="airburst-wave wave-inner" cx="0" cy="0" r="11" />
+                        <circle className="airburst-core" cx="0" cy="0" r="10" />
+                        <path d="M0-9 L0-38 M8-7 L30-30 M11 2 L39 10 M7 8 L27 31 M-8-7 L-30-30 M-11 2 L-39 10 M-7 8 L-27 31 M0 9 L0 37" />
                       </g>}
                     </g>
                     {effect === 'debris' && <g className="scenario-effect scenario-debris" aria-hidden="true">
@@ -1180,14 +1193,14 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
                       <path className="debris-smoke" d={`M0 -20 Q${-8 + fallProgress * 5} ${-8 + fallProgress * 12} ${-4 + fallProgress * 8} ${fallProgress * 18}`} />
                     </g>}
                     {effect === 'impact-land' && <g className="scenario-effect scenario-impact-land" transform="translate(0 9)" aria-hidden="true">
-                      <circle className="impact-ring" cx="0" cy="0" r="12" />
-                      <circle className="impact-core" cx="0" cy="0" r="6" />
-                      <path className="debris" d="M-3-4 L-18-18 M4-3 L18-15 M-2 5 L-13 20 M3 5 L16 18" />
+                      <circle className="impact-ring" cx="0" cy="0" r="18" />
+                      <circle className="impact-core" cx="0" cy="0" r="9" />
+                      <path className="debris" d="M-3-4 L-27-26 M4-3 L27-23 M-2 5 L-20 29 M3 5 L23 27" />
                     </g>}
                     {effect === 'impact-water' && <g className="scenario-effect scenario-impact-water" transform="translate(0 9)" aria-hidden="true">
-                      <circle className="splash-ring" cx="0" cy="0" r="13" />
-                      <path className="water-spray" d="M0 3 C-8-7 -5-19 0-25 C5-19 8-7 0 3Z" />
-                      <path className="debris" d="M-3 0 L-16-17 M3 0 L14-15" />
+                      <circle className="splash-ring" cx="0" cy="0" r="19" />
+                      <path className="water-spray" d="M0 4 C-13-9 -8-28 0-37 C8-28 13-9 0 4Z" />
+                      <path className="debris" d="M-3 0 L-24-25 M3 0 L22-23" />
                     </g>}
                     {effect === 'aftermath-land' && <g className="scenario-effect scenario-aftermath-land" transform="translate(0 9)" aria-hidden="true">
                       <ellipse cx="0" cy="2" rx="13" ry="5" /><path d="M-9-1 L-2-7 L3 0 L10-5 M-5 4 L6 3" />
