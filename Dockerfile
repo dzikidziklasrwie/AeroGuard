@@ -49,10 +49,10 @@ FROM node:22-alpine AS frontend-build
 
 WORKDIR /frontend
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
+RUN --mount=type=cache,id=aeroguard-npm,target=/root/.npm \
+    npm ci --prefer-offline --no-audit
 
 COPY frontend/ ./
-COPY --from=demo-data /generated-data ./public/data
 RUN npm run build
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS api-build
@@ -61,10 +61,12 @@ WORKDIR /source
 COPY backend/AeroGuard.Backend.sln backend/
 COPY backend/src/AeroGuard.Api/AeroGuard.Api.csproj backend/src/AeroGuard.Api/
 COPY backend/tests/AeroGuard.Api.Tests/AeroGuard.Api.Tests.csproj backend/tests/AeroGuard.Api.Tests/
-RUN dotnet restore backend/src/AeroGuard.Api/AeroGuard.Api.csproj
+RUN --mount=type=cache,id=aeroguard-nuget,target=/root/.nuget/packages \
+    dotnet restore backend/src/AeroGuard.Api/AeroGuard.Api.csproj
 
 COPY backend/ backend/
-RUN dotnet publish backend/src/AeroGuard.Api/AeroGuard.Api.csproj \
+RUN --mount=type=cache,id=aeroguard-nuget,target=/root/.nuget/packages \
+    dotnet publish backend/src/AeroGuard.Api/AeroGuard.Api.csproj \
       --configuration Release \
       --no-restore \
       --output /publish \
@@ -79,7 +81,7 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY --from=api-build /publish ./
-COPY --from=demo-data /generated-data /app/replays
+COPY frontend/public/data /app/replays
 
 ENV ASPNETCORE_HTTP_PORTS=8080 \
     AEROGUARD_DATA_DIR=/app/replays \

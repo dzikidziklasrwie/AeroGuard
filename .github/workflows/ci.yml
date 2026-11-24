@@ -79,6 +79,10 @@ jobs:
             --scenarios-dir scenarios \
             --seed 42
 
+      - name: Verify committed replay artifacts
+        if: runner.os == 'Linux'
+        run: diff --recursive --brief frontend/public/data demo-output
+
       - name: Upload native build
         uses: actions/upload-artifact@v7
         with:

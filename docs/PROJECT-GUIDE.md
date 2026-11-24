@@ -55,8 +55,9 @@ Build and start the integrated stack:
 docker compose up --build
 ```
 
-The build compiles the C++ simulator, generates seven replay artifacts,
-publishes the .NET API, builds React, and starts the API and nginx dashboard.
+The regular build reuses the seven verified replay artifacts committed under
+`frontend/public/data`, publishes the .NET API, builds React, and starts the
+API and nginx dashboard. It doesn't compile C++ during routine API or UI work.
 Wait until both services are healthy, then open:
 
 | Service | Address |
@@ -64,6 +65,20 @@ Wait until both services are healthy, then open:
 | Dashboard | [http://localhost:8080](http://localhost:8080) |
 | Direct API health | [http://127.0.0.1:8081/api/health](http://127.0.0.1:8081/api/health) |
 | OpenAPI document | [http://127.0.0.1:8081/openapi/v1.json](http://127.0.0.1:8081/openapi/v1.json) |
+
+For a faster edit-build cycle after the stack is running:
+
+```bash
+docker compose build dashboard
+docker compose up -d --no-deps dashboard
+
+docker compose build api
+docker compose up -d --no-deps api
+```
+
+Build the `simulator` target only when C++ or scenario sources change. The CI
+C++ job exports fresh data and the contract tests validate the committed
+artifacts before release.
 
 Ports 8080 and 8081 bind to loopback. Stop the stack with `Ctrl+C`, then run:
 
@@ -599,8 +614,10 @@ search and derives telemetry, transitions, timeline entries, latest values,
 and subsystem histories in one pass. The operations map is loaded only after
 the authenticated workspace needs it.
 
-The Docker image builds the simulator, replay data, API, and React bundle in
-separate stages. nginx serves React, proxies `/api`, and upgrades
+The Dockerfile keeps the simulator, API, and React bundle in separate stages.
+Routine API and dashboard targets copy the verified replay archive directly,
+so they don't depend on the simulator stage. BuildKit cache mounts retain npm
+and NuGet downloads across local rebuilds. nginx serves React, proxies `/api`, and upgrades
 `/hubs/operations`. It disables hub access logs because browser WebSocket
 transport may put a bearer value in the query string. The API image runs as a
 non-root user, and SQLite uses a named volume.
@@ -794,7 +811,7 @@ standalone files were merged here. `Shall` marks required behaviour.
 |---|---|
 | REQ-029 | Native code shall build and test with MSVC and GCC or Clang. |
 | REQ-030 | CI shall run native, frontend, API, sanitizer, and static-analysis checks. |
-| REQ-031 | Docker shall reproduce data and run the API and dashboard without host SDKs. |
+| REQ-031 | Docker shall run the API and dashboard from verified replay artifacts without host SDKs; the explicit simulator target shall reproduce those artifacts. |
 | REQ-032 | Documentation and UI shall state the fictional, educational, non-certified scope. |
 | REQ-033 | The API shall validate and import each artifact once by SHA-256 while preserving bytes and order. |
 | REQ-034 | Public REST routes shall expose scenarios, runs, replay bytes, and filtered records. |
