@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Icon } from './components/Icons';
 import { OperationsWorkspace } from './components/OperationsWorkspace';
 import { RunArchive } from './components/RunArchive';
@@ -286,6 +286,8 @@ export default function App() {
   const [selectedScenario, setSelectedScenario] = useState('');
   const [selectedRun, setSelectedRun] = useState<RunArchiveEntry>();
   const [manifestRetry, setManifestRetry] = useState(0);
+  const [replayVisible, setReplayVisible] = useState(true);
+  const replayPanelsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -350,7 +352,24 @@ export default function App() {
     : { status: 'loading' as const };
   const dataset = datasetLoad.status === 'ready' ? datasetLoad.value : undefined;
   const durationMs = dataset?.metadata.duration_ms ?? 0;
-  const playback = usePlayback(durationMs, scenario?.file ?? selectedScenario);
+  const playback = usePlayback(durationMs, scenario?.file ?? selectedScenario, replayVisible);
+
+  useEffect(() => {
+    const panels = replayPanelsRef.current;
+    if (!panels || typeof IntersectionObserver === 'undefined') return;
+    let inViewport = true;
+    const updateVisibility = () => setReplayVisible(inViewport && !document.hidden);
+    const observer = new IntersectionObserver(([entry]) => {
+      inViewport = entry.isIntersecting;
+      updateVisibility();
+    }, { rootMargin: '160px 0px' });
+    observer.observe(panels);
+    document.addEventListener('visibilitychange', updateVisibility);
+    return () => {
+      observer.disconnect();
+      document.removeEventListener('visibilitychange', updateVisibility);
+    };
+  }, [dataset]);
 
   const replayView = useMemo(
     () => buildReplayView(dataset, playback.elapsedMs),
@@ -464,7 +483,7 @@ export default function App() {
                 <div><p className="section-kicker">Replay unavailable</p><h2>AeroGuard couldn't load the JSONL artifact</h2><p>{datasetLoad.message}</p><code>{dataFilePath(scenario.file)}</code></div>
               </section>
             ) : dataset && (
-              <>
+              <div ref={replayPanelsRef}>
                 {dataset.warnings.length > 0 && <details className="warning-banner"><summary>{dataset.warnings.length} import warning{dataset.warnings.length === 1 ? '' : 's'}</summary><ul>{dataset.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></details>}
                 <section className="health-hero" id="overview" aria-labelledby="overall-health-title">
                   <div className="health-copy">
@@ -520,10 +539,9 @@ export default function App() {
                   <Timeline records={timelineRecords} subsystems={subsystems} />
                 </div>
 
-                <Statistics dataset={dataset} />
-                <ArchitectureOverview />
-              </>
+              </div>
             )}
+            {dataset && <><Statistics dataset={dataset} /><ArchitectureOverview /></>}
             <OperationsWorkspace runs={archiveLoad.status === 'ready' ? archiveLoad.value : EMPTY_RUNS} />
             <footer><span>AeroGuard</span><p>Avionics Health Monitoring Simulator - C++20 + ASP.NET Core + React</p><p>Portfolio engineering project</p></footer>
           </>

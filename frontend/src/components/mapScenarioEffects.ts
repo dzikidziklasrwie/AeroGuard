@@ -21,37 +21,35 @@ const OVERHEATING_DEBRIS_MS = 83_000;
 const OVERHEATING_IMPACT_MS = 91_000;
 const OVERHEATING_AFTERMATH_MS = 97_000;
 
+const TIMED_EFFECTS = new Map<string, { startMs: number; endMs: number; effect: MapScenarioEffect }>([
+  ['communication-interruption', { startMs: 10_000, endMs: 22_000, effect: 'communication' }],
+  ['invalid-sensor-data', { startMs: 10_000, endMs: 20_000, effect: 'sensor' }],
+  ['power-fluctuations', { startMs: 10_000, endMs: 26_000, effect: 'power' }],
+  ['multiple-subsystem-failures', { startMs: 8_000, endMs: 44_000, effect: 'multiple' }],
+  ['recovery-after-temporary-failure', { startMs: 10_000, endMs: 30_000, effect: 'recovery' }],
+]);
+
+export function firstMapEffectStartsAt(scenario: string | null): number | undefined {
+  if (scenario === 'simulated-overheating') return OVERHEATING_WARNING_MS;
+  return scenario ? TIMED_EFFECTS.get(scenario)?.startMs : undefined;
+}
+
 export function getMapScenarioEffect(
   scenario: string | null,
   elapsedMs: number,
   overLand: () => boolean = () => false,
 ): MapScenarioEffect {
-  switch (scenario) {
-    case 'communication-interruption':
-      return elapsedMs >= 10_000 && elapsedMs < 22_000 ? 'communication' : 'none';
-    case 'invalid-sensor-data':
-      return elapsedMs >= 10_000 && elapsedMs < 20_000 ? 'sensor' : 'none';
-    case 'power-fluctuations':
-      return elapsedMs >= 10_000 && elapsedMs < 26_000 ? 'power' : 'none';
-    case 'multiple-subsystem-failures':
-      return elapsedMs >= 8_000 && elapsedMs < 44_000 ? 'multiple' : 'none';
-    case 'recovery-after-temporary-failure':
-      return elapsedMs >= 10_000 && elapsedMs < 30_000 ? 'recovery' : 'none';
-    case 'simulated-overheating':
-      if (elapsedMs >= OVERHEATING_WARNING_MS && elapsedMs < OVERHEATING_FIRE_MS) return 'thermal';
-      if (elapsedMs >= OVERHEATING_FIRE_MS && elapsedMs < OVERHEATING_AIRBURST_MS) return 'fire';
-      if (elapsedMs >= OVERHEATING_AIRBURST_MS && elapsedMs < OVERHEATING_DEBRIS_MS) return 'airburst';
-      if (elapsedMs >= OVERHEATING_DEBRIS_MS && elapsedMs < OVERHEATING_IMPACT_MS) return 'debris';
-      if (elapsedMs >= OVERHEATING_IMPACT_MS && elapsedMs < OVERHEATING_AFTERMATH_MS) {
-        return overLand() ? 'impact-land' : 'impact-water';
-      }
-      if (elapsedMs >= OVERHEATING_AFTERMATH_MS) {
-        return overLand() ? 'aftermath-land' : 'aftermath-water';
-      }
-      return 'none';
-    default:
-      return 'none';
+  if (scenario !== 'simulated-overheating') {
+    const timing = scenario ? TIMED_EFFECTS.get(scenario) : undefined;
+    return timing && elapsedMs >= timing.startMs && elapsedMs < timing.endMs ? timing.effect : 'none';
   }
+  if (!(elapsedMs >= OVERHEATING_WARNING_MS)) return 'none';
+  if (elapsedMs < OVERHEATING_FIRE_MS) return 'thermal';
+  if (elapsedMs < OVERHEATING_AIRBURST_MS) return 'fire';
+  if (elapsedMs < OVERHEATING_DEBRIS_MS) return 'airburst';
+  if (elapsedMs < OVERHEATING_IMPACT_MS) return 'debris';
+  if (elapsedMs < OVERHEATING_AFTERMATH_MS) return overLand() ? 'impact-land' : 'impact-water';
+  return overLand() ? 'aftermath-land' : 'aftermath-water';
 }
 
 export function getMapScenarioEffectLabel(effect: MapScenarioEffect): string {

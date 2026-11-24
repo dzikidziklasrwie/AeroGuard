@@ -3186,6 +3186,10 @@ footer p:last-child {
   outline: none;
 }
 
+.aircraft-marker:not(.active) .scenario-effect * {
+  filter: none !important;
+}
+
 .aircraft-marker:focus-visible .marker-core {
   stroke: #fff;
   stroke-width: 3;
@@ -3252,7 +3256,6 @@ footer p:last-child {
   fill: #99d2df;
   pointer-events: none;
   transform-origin: center;
-  filter: url(#marker-glow);
   animation: contrail-fade 1.8s ease-in-out infinite alternate;
 }
 
@@ -3279,7 +3282,7 @@ footer p:last-child {
   fill: var(--neutral);
 }
 
-.aircraft-marker.active {
+.aircraft-marker.active .marker-aircraft {
   filter: url(#marker-glow);
 }
 

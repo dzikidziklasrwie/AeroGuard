@@ -196,6 +196,10 @@ choice. The API preserves the current position, destination, patrol scope, and
 speed. Optimistic concurrency rejects a stale selection instead of overwriting
 another user's change.
 
+After applying a scenario, the map card shows when the save is in progress and
+how many seconds remain before the first scheduled effect. The replay starts
+from its recorded baseline, including the time before the fault appears.
+
 Communication loss uses three wide signal rings and a red disconnect mark.
 Invalid sensor data uses an amber warning. Power fluctuation sends bright arcs
 between pulsing nodes, while multiple failures combine smoke and fault pulses.

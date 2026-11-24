@@ -222,11 +222,11 @@ describe('OperationsMap', () => {
     const handlers = hubMocks.connect.mock.calls[0][1];
 
     act(() => handlers.onFlightUpdated({ ...overheating, scenario_elapsed_ms: 80_000, event_sequence: 301 }));
-    expect(marker.querySelector('.scenario-airburst')).toBeInTheDocument();
+    await waitFor(() => expect(marker.querySelector('.scenario-airburst')).toBeInTheDocument());
     expect(marker.querySelector('.marker-aircraft')).not.toBeInTheDocument();
 
     act(() => handlers.onFlightUpdated({ ...overheating, scenario_elapsed_ms: 85_000, event_sequence: 302 }));
-    expect(marker.querySelectorAll('.debris-fragment')).toHaveLength(4);
+    await waitFor(() => expect(marker.querySelectorAll('.debris-fragment')).toHaveLength(4));
 
     act(() => handlers.onFlightUpdated({
       ...overheating,
@@ -235,7 +235,7 @@ describe('OperationsMap', () => {
       longitude: -30,
       event_sequence: 303,
     }));
-    expect(marker.querySelector('.scenario-impact-water')).toBeInTheDocument();
+    await waitFor(() => expect(marker.querySelector('.scenario-impact-water')).toBeInTheDocument());
     expect(marker.querySelector('.scenario-impact-land')).not.toBeInTheDocument();
   });
 
@@ -287,6 +287,7 @@ describe('OperationsMap', () => {
       body: JSON.stringify({ run_id: 12, expected_version: 3 }),
     })));
     expect(screen.getByText('Simulated overheating / Normal visual state')).toBeInTheDocument();
+    expect(screen.getByText('Replay running · first effect in 10 s')).toBeInTheDocument();
     expect(screen.getByText('En route to the global patrol route')).toBeInTheDocument();
   });
 
@@ -316,6 +317,7 @@ describe('OperationsMap', () => {
     };
     const handlers = hubMocks.connect.mock.calls[0][1];
     act(() => handlers.onFlightUpdated({ ...saved, scenario_elapsed_ms: 15_000, event_sequence: 4 }));
+    await screen.findByText('Simulated overheating / Sustained overheating');
     await act(async () => completeSave(response(saved)));
 
     expect(screen.getByText(/Simulated overheating assigned to N204AG/)).toBeInTheDocument();
@@ -410,9 +412,12 @@ describe('OperationsMap', () => {
     await waitFor(() => expect(hubMocks.connect).toHaveBeenCalled());
     const handlers = hubMocks.connect.mock.calls[0][1];
 
-    act(() => handlers.onFlightUpdated({ ...flight, latitude: 91, event_sequence: 201 }));
+    act(() => {
+      handlers.onFlightUpdated({ ...flight, latitude: 52.25, event_sequence: 200 });
+      handlers.onFlightUpdated({ ...flight, latitude: 91, event_sequence: 201 });
+    });
 
-    expect(screen.getByRole('button', { name: /N204AG, simulated position 52.23° N, 21.01° E/ })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /N204AG, simulated position 52.25° N, 21.01° E/ })).toBeInTheDocument();
     expect(screen.getByText('Transit 40%')).toBeInTheDocument();
 
     act(() => handlers.onFlightUpdated({ ...flight, id: 99, tail_number: 'BAD-99', longitude: 181, event_sequence: 202 }));
@@ -443,13 +448,13 @@ describe('OperationsMap', () => {
     const handlers = hubMocks.connect.mock.calls[0][1];
 
     act(() => handlers.onFlightRemoved(44, 200));
-    expect(screen.queryByRole('button', { name: /N204AG, simulated position/ })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('button', { name: /N204AG, simulated position/ })).not.toBeInTheDocument());
 
     act(() => handlers.onFlightUpdated({ ...flight, event_sequence: 199 }));
     expect(screen.queryByRole('button', { name: /N204AG, simulated position/ })).not.toBeInTheDocument();
 
     act(() => handlers.onFlightUpdated({ ...flight, event_sequence: 201 }));
-    expect(screen.getByRole('button', { name: /N204AG, simulated position/ })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /N204AG, simulated position/ })).toBeInTheDocument();
   });
 
   it('places an owned aircraft from a map click and sends the REST payload', async () => {
