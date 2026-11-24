@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { RunArchiveEntry } from '../types';
 import { formatDuration, titleCase } from '../utils/format';
 
@@ -19,7 +20,7 @@ function importedLabel(value?: string): string {
     : date.toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-export function RunArchive({ runs, activeReplayUrl, onOpen }: RunArchiveProps) {
+export const RunArchive = memo(function RunArchive({ runs, activeReplayUrl, onOpen }: RunArchiveProps) {
   const selected = runs.find((run) => run.replay_url === activeReplayUrl);
   const apiCount = runs.filter((run) => run.source === 'api').length;
 
@@ -110,4 +111,4 @@ export function RunArchive({ runs, activeReplayUrl, onOpen }: RunArchiveProps) {
       ) : <p className="archive-empty">No recorded runs are available.</p>}
     </section>
   );
-}
+});

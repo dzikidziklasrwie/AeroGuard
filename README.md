@@ -41,7 +41,7 @@ Repository: [github.com/dzikidziklasrwie/AeroGuard](https://github.com/dzikidzik
 | Map interaction | Validated coordinates, bounded transit and patrol, last-valid-position recovery, sphere-clipped markers, 1x-6x zoom, pan, reset, and selected-aircraft focus |
 | Scenario-linked map effects | Each flight keeps a visible identity, ground shadow, selected-aircraft card, and deterministic visuals derived from its stored telemetry timeline |
 | UI separation | React reads stored C++ output through REST or a static fallback; it doesn't recreate thresholds or state transitions |
-| Work reduction | Idle broadcasts stop before database reads, flight data is prepared once per update, replay state is derived in one pass, and the map module loads on demand |
+| Work reduction | Scenario saves return before SignalR fan-out, map renders reuse country outlines, and replay downloads use gzip and ETag revalidation |
 | Delivery | CMake presets, Windows/Linux CI, xUnit, clang-tidy, ASan/UBSan, Dependabot, and multi-stage Docker |
 
 ```mermaid

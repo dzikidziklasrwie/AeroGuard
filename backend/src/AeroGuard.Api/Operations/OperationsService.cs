@@ -16,6 +16,7 @@ public sealed class OperationsService(
     OperationPermissionService permissionService,
     FlightSnapshotFactory snapshotFactory,
     OperationsBroadcaster broadcaster,
+    OperationsBroadcastRefreshSignal broadcastRefreshSignal,
     IAuditRepository auditRepository,
     TimeProvider timeProvider,
     ILogger<OperationsService> logger)
@@ -164,11 +165,19 @@ public sealed class OperationsService(
         return snapshot;
     }
 
-    public async Task<FlightDto> UpdateFlightAsync(
+    public Task<FlightDto> UpdateFlightAsync(
         CurrentUser actor,
         long flightId,
         UpdateFlightRequest request,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        UpdateFlightCoreAsync(actor, flightId, request, null, cancellationToken);
+
+    private async Task<FlightDto> UpdateFlightCoreAsync(
+        CurrentUser actor,
+        long flightId,
+        UpdateFlightRequest request,
+        FlightRecord? scenarioSource,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(actor);
         ArgumentNullException.ThrowIfNull(request);
@@ -178,7 +187,7 @@ public sealed class OperationsService(
             actor.Roles,
             cancellationToken);
         RequirePermission(isAdmin, permissions, OperationPermissionNames.FlightReconfigureOwn);
-        var current = await RequireVisibleFlightAsync(actor, flightId, cancellationToken);
+        var current = scenarioSource ?? await RequireVisibleFlightAsync(actor, flightId, cancellationToken);
         RequireManagerOrAdmin(actor, current.CurrentUserAccess, "Only an owner or maintainer can reconfigure this flight.");
         if (request.AircraftId != current.AircraftId)
         {
@@ -248,10 +257,18 @@ public sealed class OperationsService(
             permissions,
             isAdmin,
             CancellationToken.None);
-        await TryBroadcastAsync(
-            token => broadcaster.BroadcastFlightAsync(updated, token),
-            "update",
-            updated.Id);
+        if (scenarioSource is null)
+        {
+            await TryBroadcastAsync(
+                token => broadcaster.BroadcastFlightAsync(updated, token),
+                "update",
+                updated.Id);
+        }
+        else
+        {
+            broadcastRefreshSignal.RequestRefresh();
+        }
+
         return snapshot;
     }
 
@@ -265,7 +282,7 @@ public sealed class OperationsService(
         ArgumentNullException.ThrowIfNull(request);
         var current = await RequireVisibleFlightAsync(actor, flightId, cancellationToken);
         var position = FlightMotion.Calculate(current, timeProvider.GetUtcNow());
-        return await UpdateFlightAsync(
+        return await UpdateFlightCoreAsync(
             actor,
             flightId,
             new UpdateFlightRequest(
@@ -277,6 +294,7 @@ public sealed class OperationsService(
                 position.Longitude,
                 current.SpeedKph,
                 request.ExpectedVersion),
+            current,
             cancellationToken);
     }
 

@@ -68,6 +68,7 @@ const projection = geoNaturalEarth1().fitExtent([[18, 18], [MAP_WIDTH - 18, MAP_
 const path = geoPath(projection);
 const spherePath = path({ type: 'Sphere' }) ?? '';
 const countriesPath = path(countries) ?? '';
+const countryOutlines = countries.features.map((country) => path(country) ?? '');
 const graticulePath = path(geoGraticule10()) ?? '';
 const MARKER_LABEL_WIDTH = 76;
 const MARKER_LABEL_GAP = 12;
@@ -348,27 +349,37 @@ function countryDetails(feature: Feature<Geometry, GeoJsonProperties>): Omit<Hov
   };
 }
 
+function reconcileFlight(previous: FlightRecord | undefined, incoming: FlightRecord): FlightRecord | undefined {
+  if (previous && previous.version > incoming.version) return previous;
+  if (hasValidFlightPosition(incoming)) return incoming;
+  if (!previous) return undefined;
+  return {
+    ...incoming,
+    latitude: previous.latitude,
+    longitude: previous.longitude,
+    heading_deg: previous.heading_deg,
+  };
+}
+
 function reconcileFlightUpdate(current: FlightRecord[], incoming: FlightRecord): FlightRecord[] {
   const index = current.findIndex((candidate) => candidate.id === incoming.id);
-  if (index < 0) return hasValidFlightPosition(incoming) ? [...current, incoming] : current;
   const previous = current[index];
-  const next = hasValidFlightPosition(incoming)
-    ? incoming
-    : {
-        ...incoming,
-        latitude: previous.latitude,
-        longitude: previous.longitude,
-        heading_deg: previous.heading_deg,
-      };
-  return current.map((candidate, candidateIndex) => candidateIndex === index ? next : candidate);
+  const next = reconcileFlight(previous, incoming);
+  if (!next || next === previous) return current;
+  if (index < 0) return [...current, next];
+  const updated = current.slice();
+  updated[index] = next;
+  return updated;
 }
 
 function reconcileFlightSnapshot(current: FlightRecord[], incoming: FlightRecord[]): FlightRecord[] {
-  const incomingIds = new Set(incoming.map((flight) => flight.id));
-  return incoming.reduce(
-    (result, flight) => reconcileFlightUpdate(result, flight),
-    current.filter((flight) => incomingIds.has(flight.id)),
-  );
+  const previousById = new Map(current.map((flight) => [flight.id, flight]));
+  const snapshot: FlightRecord[] = [];
+  for (const flight of incoming) {
+    const next = reconcileFlight(previousById.get(flight.id), flight);
+    if (next) snapshot.push(next);
+  }
+  return snapshot;
 }
 
 function routeDestinationLabel(flight: FlightRecord): string {
@@ -401,10 +412,13 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
   const [streamState, setStreamState] = useState<StreamState>('connecting');
   const [placement, setPlacement] = useState<PlacementDraft | null>(null);
   const [messages, setMessages] = useState<Record<number, ChatMessageRecord[]>>({});
+  const loadedChatsRef = useRef(new Set<number>());
   const [messageText, setMessageText] = useState('');
+  const sendingMessageRef = useRef(false);
   const [shareType, setShareType] = useState<ChatShareType>('TEXT');
   const [scenarioChoice, setScenarioChoice] = useState<{ flightId: number; runId: string } | null>(null);
   const [scenarioMenuOpen, setScenarioMenuOpen] = useState(false);
+  const [pendingScenarioFlightId, setPendingScenarioFlightId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -418,6 +432,8 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
   const suppressMapClickRef = useRef(false);
   const isAdmin = hasRole(currentUser, 'Admin');
   const selectedFlight = flights.find((flight) => flight.id === selectedFlightId) ?? flights[0];
+  const chatFlightId = selectedFlight?.id;
+  const isApplyingScenario = pendingScenarioFlightId !== null && pendingScenarioFlightId === selectedFlight?.id;
   const scenarioRunId = selectedFlight && scenarioChoice?.flightId === selectedFlight.id
     ? scenarioChoice.runId
     : selectedFlight ? String(selectedFlight.run_id) : '';
@@ -458,41 +474,41 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
 
   useEffect(() => {
     const controller = new AbortController();
-    let active = true;
-    async function load() {
-      const [flightResult, permissionResult] = await Promise.allSettled([
-        getOperationFlights(token, controller.signal),
-        getOperationPermissions(token, controller.signal),
-      ]);
-      if (!active) return;
-
-      if (flightResult.status === 'fulfilled') {
-        const validFlights = reconcileFlightSnapshot([], flightResult.value);
+    const { signal } = controller;
+    void getOperationFlights(token, signal)
+      .then((snapshot) => {
+        if (signal.aborted) return;
+        const validFlights = reconcileFlightSnapshot([], snapshot);
         setFlights(validFlights);
         setSelectedFlightId((current) => current ?? validFlights[0]?.id ?? null);
         setStreamState('connecting');
         setDataMode('api');
-      } else if (isApiUnavailable(flightResult.reason)) {
-        const demoFlights = createDemoFlights(aircraft, currentUser);
-        setFlights(demoFlights);
-        setSelectedFlightId(demoFlights[0]?.id ?? null);
-        setDataMode('demo');
-        setStreamState('snapshot');
-      } else {
-        setDataMode('error');
-        handleError(flightResult.reason);
-      }
-
-      if (permissionResult.status === 'fulfilled') {
-        setPermissions(permissionResult.value);
-      }
-    }
-    void load();
-    return () => {
-      active = false;
-      controller.abort();
-    };
+      }, (requestError: unknown) => {
+        if (signal.aborted) return;
+        if (isApiUnavailable(requestError)) {
+          const demoFlights = createDemoFlights(aircraft, currentUser);
+          setFlights(demoFlights);
+          setSelectedFlightId(demoFlights[0]?.id ?? null);
+          setDataMode('demo');
+          setStreamState('snapshot');
+        } else {
+          setDataMode('error');
+          handleError(requestError);
+        }
+      });
+    return () => controller.abort();
   }, [aircraft, currentUser, handleError, token]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const { signal } = controller;
+    void getOperationPermissions(token, signal).then((granted) => {
+      if (!signal.aborted) setPermissions(granted);
+    }, () => {
+      if (!signal.aborted) setPermissions([]);
+    });
+    return () => controller.abort();
+  }, [token]);
 
   useEffect(() => {
     if (dataMode !== 'api') return;
@@ -574,18 +590,24 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
   }, [dataMode, handleError, streamState, token]);
 
   useEffect(() => {
-    if (!selectedFlight) return;
-    if (messages[selectedFlight.id]) return;
-    if (dataMode === 'demo') return;
-    if (dataMode !== 'api') return;
+    if (dataMode !== 'api' || chatFlightId === undefined || loadedChatsRef.current.has(chatFlightId)) return;
     const controller = new AbortController();
-    getOperationMessages(token, selectedFlight.id, controller.signal)
-      .then((records) => setMessages((current) => ({ ...current, [selectedFlight.id]: records })))
-      .catch((requestError: unknown) => {
-        if (!(requestError instanceof DOMException && requestError.name === 'AbortError')) handleError(requestError);
+    const { signal } = controller;
+    void getOperationMessages(token, chatFlightId, signal)
+      .then((records) => {
+        if (signal.aborted) return;
+        loadedChatsRef.current.add(chatFlightId);
+        setMessages((current) => {
+          const live = current[chatFlightId] ?? [];
+          const combined = new Map(records.map((record) => [record.id, record]));
+          for (const message of live) combined.set(message.id, message);
+          return { ...current, [chatFlightId]: [...combined.values()].sort((a, b) => a.id - b.id) };
+        });
+      }, (requestError: unknown) => {
+        if (!signal.aborted) handleError(requestError);
       });
     return () => controller.abort();
-  }, [currentUser, dataMode, handleError, messages, selectedFlight, token]);
+  }, [chatFlightId, dataMode, handleError, token]);
 
   const availableAircraft = useMemo(() => {
     const activeAircraftIds = new Set(flights.map((flight) => flight.aircraft_id));
@@ -833,12 +855,14 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
 
   async function assignScenario(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedFlight?.can_manage) return;
+    if (busy || !selectedFlight?.can_manage) return;
     const runId = Number(scenarioRunId);
     const run = availableRuns.find((candidate) => candidate.id === runId);
     if (!run || runId === selectedFlight.run_id) return;
 
     setBusy(true);
+    setPendingScenarioFlightId(selectedFlight.id);
+    setScenarioMenuOpen(false);
     setError('');
     setNotice('');
     try {
@@ -854,15 +878,17 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
             version: selectedFlight.version + 1,
             updated_at_utc: new Date().toISOString(),
           };
-      setFlights((current) => current.map((flight) =>
-        flight.id === saved.id ? saved : flight));
-      setScenarioChoice({ flightId: saved.id, runId: String(saved.run_id) });
-      setScenarioMenuOpen(false);
+      setFlights((current) => {
+        const latest = current.find((flight) => flight.id === saved.id);
+        // The live feed can deliver this version before the HTTP response.
+        return latest && latest.version < saved.version ? reconcileFlightUpdate(current, saved) : current;
+      });
+      setScenarioChoice((choice) => choice?.flightId === saved.id ? null : choice);
       setNotice(`${saved.scenario_label ?? titleCase(saved.scenario ?? 'Scenario')} assigned to ${saved.tail_number}.`);
     } catch (requestError) {
       handleMapOperationError(requestError);
-      setScenarioChoice(null);
     } finally {
+      setPendingScenarioFlightId(null);
       setBusy(false);
     }
   }
@@ -886,7 +912,8 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
 
   async function postMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedFlight || !messageText.trim() || !canSendChat || (shareType === 'TELEMETRY' && !canShareTelemetry)) return;
+    if (busy || sendingMessageRef.current || !selectedFlight || !messageText.trim() || !canSendChat || (shareType === 'TELEMETRY' && !canShareTelemetry)) return;
+    sendingMessageRef.current = true;
     setBusy(true);
     setError('');
     try {
@@ -905,15 +932,18 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
               : shareType === 'TELEMETRY' ? selectedFlight.telemetry : null,
             sent_at_utc: new Date().toISOString(),
           } satisfies ChatMessageRecord;
-      setMessages((current) => ({
-        ...current,
-        [selectedFlight.id]: [...(current[selectedFlight.id] ?? (dataMode === 'demo' ? createDemoMessages(selectedFlight, currentUser) : [])), posted],
-      }));
+      setMessages((current) => {
+        const existing = current[selectedFlight.id] ?? (dataMode === 'demo' ? createDemoMessages(selectedFlight, currentUser) : []);
+        return existing.some((message) => message.id === posted.id)
+          ? current
+          : { ...current, [selectedFlight.id]: [...existing, posted] };
+      });
       setMessageText('');
       setShareType('TEXT');
     } catch (requestError) {
       handleMapOperationError(requestError);
     } finally {
+      sendingMessageRef.current = false;
       setBusy(false);
     }
   }
@@ -1087,7 +1117,7 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
                   return <path
                     key={`${String(feature.id ?? 'country')}-${index}`}
                     className={`map-country-hitarea${selected ? ' selected' : ''}`}
-                    d={path(feature) ?? ''}
+                    d={countryOutlines[index]}
                     onMouseEnter={() => setHoveredCountry(countryDetails(feature))}
                     onMouseLeave={() => setHoveredCountry(null)}
                   ><title>{name}</title></path>;
@@ -1258,6 +1288,7 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
                       aria-haspopup="listbox"
                       aria-expanded={scenarioMenuOpen}
                       aria-controls={`scenario-options-${selectedFlight.id}`}
+                      disabled={isApplyingScenario}
                       onClick={() => setScenarioMenuOpen((open) => !open)}
                       onKeyDown={(event) => {
                         if (event.key === 'ArrowDown') {
@@ -1302,7 +1333,9 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
                     </div>}
                   </div>
                 </div>
-                <button type="submit" className="button secondary-button" disabled={busy || Number(scenarioRunId) === selectedFlight.run_id}>Apply scenario</button>
+                <button type="submit" className="button secondary-button" aria-busy={isApplyingScenario} disabled={busy || Number(scenarioRunId) === selectedFlight.run_id}>
+                  {isApplyingScenario ? 'Applying scenario…' : 'Apply scenario'}
+                </button>
                 <small>This changes only the selected aircraft's replay and map effect. Its destination remains the same.</small>
               </form>}
               <div className="flight-owner"><span>Owner</span><strong>{selectedFlight.owner_display_name}</strong><small>@{selectedFlight.owner_username}</small></div>

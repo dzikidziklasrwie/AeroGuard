@@ -175,6 +175,7 @@ describe('AeroGuard dashboard', () => {
     expect(await screen.findByRole('heading', { name: 'Simulated operations map' }, { timeout: 5_000 })).toBeInTheDocument();
     expect(screen.getByText('Simulation only')).toBeInTheDocument();
     expect(screen.getByText(/Signed in as admin/)).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('/api/admin/'))).toBe(false);
     await user.selectOptions(screen.getByLabelText('Public replay scenario'), 'communication-interruption');
     expect(screen.getByText(/Signed in as admin/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
