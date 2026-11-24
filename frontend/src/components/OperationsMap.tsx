@@ -2,10 +2,11 @@ import { geoCentroid, geoContains, geoGraticule10, geoNaturalEarth1, geoPath } f
 import type { Feature, FeatureCollection, GeoJsonProperties, Geometry } from 'geojson';
 import {
   type FormEvent,
-  type KeyboardEvent,
   type MouseEvent,
   type PointerEvent,
   type WheelEvent,
+  memo,
+  startTransition,
   useCallback,
   useEffect,
   useMemo,
@@ -56,11 +57,12 @@ import {
   zoomViewport,
 } from './mapViewport';
 import {
-  debrisProgress,
+  firstMapEffectStartsAt,
   getMapScenarioEffect,
   getMapScenarioEffectLabel,
-  showsAircraft,
+  type MapScenarioEffect,
 } from './mapScenarioEffects';
+import { OperationsMapAircraftMarker } from './OperationsMapAircraftMarker';
 
 const topology = worldData as unknown as Topology<{ countries: GeometryCollection }>;
 const countries = feature(topology, topology.objects.countries) as FeatureCollection<Geometry, GeoJsonProperties>;
@@ -69,8 +71,6 @@ const path = geoPath(projection);
 const spherePath = path({ type: 'Sphere' }) ?? '';
 const countriesPath = path(countries) ?? '';
 const graticulePath = path(geoGraticule10()) ?? '';
-const MARKER_LABEL_WIDTH = 76;
-const MARKER_LABEL_GAP = 12;
 const DISPLAY_LATITUDE_LIMIT = 82;
 const DISPLAY_LONGITUDE_LIMIT = 176;
 
@@ -157,13 +157,6 @@ interface HoveredCountry {
   longitude: number;
 }
 
-const DEBRIS_FRAGMENTS = [
-  { x: -4, y: -24, dx: -19, dy: 38, rotation: -150, shape: '-5,-2 5,-1 3,3 -4,2' },
-  { x: 5, y: -22, dx: 16, dy: 35, rotation: 185, shape: '-4,-3 5,0 2,4 -3,2' },
-  { x: -1, y: -18, dx: -8, dy: 42, rotation: 240, shape: '-3,-4 4,-2 3,3 -2,4' },
-  { x: 2, y: -20, dx: 9, dy: 40, rotation: -210, shape: '-5,0 2,-3 5,2 -2,3' },
-] as const;
-
 interface OperationsMapProps {
   token: string;
   currentUser: UserAccount;
@@ -194,12 +187,39 @@ function isOverLand(latitude: number, longitude: number): boolean {
     geoContains(country, [longitude, latitude]));
 }
 
-function getFlightScenarioEffect(flight: FlightRecord) {
-  return getMapScenarioEffect(
+const flightScenarioEffectCache = new WeakMap<FlightRecord, MapScenarioEffect>();
+
+function getFlightScenarioEffect(flight: FlightRecord): MapScenarioEffect {
+  const cached = flightScenarioEffectCache.get(flight);
+  if (cached) return cached;
+
+  const effect = getMapScenarioEffect(
     flight.scenario,
     flight.scenario_elapsed_ms,
     () => isOverLand(flight.latitude, flight.longitude),
   );
+  flightScenarioEffectCache.set(flight, effect);
+  return effect;
+}
+
+interface FlightMapRenderModel {
+  flight: FlightRecord;
+  point: [number, number];
+  effect: MapScenarioEffect;
+}
+
+const flightMapRenderCache = new WeakMap<FlightRecord, FlightMapRenderModel | null>();
+
+function getFlightMapRenderModel(flight: FlightRecord): FlightMapRenderModel | null {
+  const cached = flightMapRenderCache.get(flight);
+  if (cached !== undefined) return cached;
+
+  const point = projectMarkerCoordinate(flight.latitude, flight.longitude);
+  const model = point
+    ? { flight, point, effect: getFlightScenarioEffect(flight) }
+    : null;
+  flightMapRenderCache.set(flight, model);
+  return model;
 }
 
 function formatCoordinatePair(latitude: number, longitude: number): string {
@@ -330,13 +350,7 @@ function countryFeatureName(feature: Feature<Geometry, GeoJsonProperties>): stri
   return typeof feature.properties?.name === 'string' ? feature.properties.name : '';
 }
 
-function findCountryFeature(code: string): Feature<Geometry, GeoJsonProperties> | undefined {
-  const aliases = COUNTRY_NAME_ALIASES[code] ?? [];
-  return countries.features.find((feature) =>
-    aliases.some((alias) => countryFeatureName(feature).toLowerCase() === alias.toLowerCase()));
-}
-
-function countryDetails(feature: Feature<Geometry, GeoJsonProperties>): Omit<HoveredCountry, 'name'> & { name: string } {
+function calculateCountryDetails(feature: Feature<Geometry, GeoJsonProperties>): HoveredCountry {
   const center = geoCentroid(feature);
   const numericCode = String(feature.id ?? '').replace(/^0+/, '') || '—';
   const coordinate = projection.invert?.(path.centroid(feature));
@@ -348,27 +362,116 @@ function countryDetails(feature: Feature<Geometry, GeoJsonProperties>): Omit<Hov
   };
 }
 
+interface CountryRenderModel {
+  feature: Feature<Geometry, GeoJsonProperties>;
+  key: string;
+  name: string;
+  pathData: string;
+}
+
+const countryRenderModels: CountryRenderModel[] = countries.features.map((feature, index) => ({
+  feature,
+  key: `${String(feature.id ?? 'country')}-${index}`,
+  name: countryFeatureName(feature),
+  pathData: path(feature) ?? '',
+}));
+const countryFeatureByName = new Map(
+  countryRenderModels.map(({ feature, name }) => [name.toLowerCase(), feature]),
+);
+const countryDetailsByFeature = new WeakMap<Feature<Geometry, GeoJsonProperties>, HoveredCountry>();
+
+function findCountryFeature(code: string): Feature<Geometry, GeoJsonProperties> | undefined {
+  for (const alias of COUNTRY_NAME_ALIASES[code] ?? []) {
+    const match = countryFeatureByName.get(alias.toLowerCase());
+    if (match) return match;
+  }
+  return undefined;
+}
+
+function countryDetails(feature: Feature<Geometry, GeoJsonProperties>): HoveredCountry {
+  const cached = countryDetailsByFeature.get(feature);
+  if (cached) return cached;
+  const details = calculateCountryDetails(feature);
+  countryDetailsByFeature.set(feature, details);
+  return details;
+}
+
+interface CountryLayerProps {
+  selectedCode: string;
+  onHover: (country: HoveredCountry | null) => void;
+}
+
+const CountryLayer = memo(function CountryLayer({ selectedCode, onHover }: CountryLayerProps) {
+  const selectedNames = new Set(
+    (COUNTRY_NAME_ALIASES[selectedCode] ?? []).map((name) => name.toLowerCase()),
+  );
+
+  return <g className="map-country-hover-layer" aria-label="Countries">
+    {countryRenderModels.map((country) => <path
+      key={country.key}
+      className={`map-country-hitarea${selectedNames.has(country.name.toLowerCase()) ? ' selected' : ''}`}
+      d={country.pathData}
+      onMouseEnter={() => onHover(countryDetails(country.feature))}
+      onMouseLeave={() => onHover(null)}
+    ><title>{country.name}</title></path>)}
+  </g>;
+});
+
+function reconcileFlight(previous: FlightRecord | undefined, incoming: FlightRecord): FlightRecord | undefined {
+  if (previous && previous.version > incoming.version) return previous;
+  if (hasValidFlightPosition(incoming)) return incoming;
+  if (!previous) return undefined;
+  return {
+    ...incoming,
+    latitude: previous.latitude,
+    longitude: previous.longitude,
+    heading_deg: previous.heading_deg,
+  };
+}
+
 function reconcileFlightUpdate(current: FlightRecord[], incoming: FlightRecord): FlightRecord[] {
   const index = current.findIndex((candidate) => candidate.id === incoming.id);
-  if (index < 0) return hasValidFlightPosition(incoming) ? [...current, incoming] : current;
   const previous = current[index];
-  const next = hasValidFlightPosition(incoming)
-    ? incoming
-    : {
-        ...incoming,
-        latitude: previous.latitude,
-        longitude: previous.longitude,
-        heading_deg: previous.heading_deg,
-      };
-  return current.map((candidate, candidateIndex) => candidateIndex === index ? next : candidate);
+  const next = reconcileFlight(previous, incoming);
+  if (!next || next === previous) return current;
+  if (index < 0) return [...current, next];
+  const updated = current.slice();
+  updated[index] = next;
+  return updated;
 }
 
 function reconcileFlightSnapshot(current: FlightRecord[], incoming: FlightRecord[]): FlightRecord[] {
-  const incomingIds = new Set(incoming.map((flight) => flight.id));
-  return incoming.reduce(
-    (result, flight) => reconcileFlightUpdate(result, flight),
-    current.filter((flight) => incomingIds.has(flight.id)),
-  );
+  const previousById = new Map(current.map((flight) => [flight.id, flight]));
+  const snapshot: FlightRecord[] = [];
+  for (const flight of incoming) {
+    const next = reconcileFlight(previousById.get(flight.id), flight);
+    if (next) snapshot.push(next);
+  }
+  return snapshot;
+}
+
+function applyLiveFlights(current: FlightRecord[], updates: Map<number, FlightRecord | null>): FlightRecord[] {
+  const knownIds = new Set<number>();
+  const result: FlightRecord[] = [];
+  let changed = false;
+  for (const previous of current) {
+    knownIds.add(previous.id);
+    const update = updates.get(previous.id);
+    if (update === null) {
+      changed = true;
+      continue;
+    }
+    const next = update ? reconcileFlight(previous, update) ?? previous : previous;
+    changed ||= next !== previous;
+    result.push(next);
+  }
+  for (const [id, flight] of updates) {
+    if (flight && !knownIds.has(id) && hasValidFlightPosition(flight)) {
+      result.push(flight);
+      changed = true;
+    }
+  }
+  return changed ? result : current;
 }
 
 function routeDestinationLabel(flight: FlightRecord): string {
@@ -377,14 +480,6 @@ function routeDestinationLabel(flight: FlightRecord): string {
     return CONTINENT_OPTIONS.find(([code]) => code === flight.scope_code)?.[1] ?? flight.scope_code;
   }
   return COUNTRY_OPTIONS.find(([code]) => code === flight.scope_code)?.[1] ?? flight.scope_code;
-}
-
-function markerLabelTransform([x, y]: [number, number], viewport: MapViewport): string {
-  const labelX = x > viewport.x + viewport.width / 2
-    ? -(MARKER_LABEL_WIDTH + MARKER_LABEL_GAP)
-    : MARKER_LABEL_GAP;
-  const labelY = y < viewport.y + 48 / viewport.zoom ? MARKER_LABEL_GAP : -14;
-  return `translate(${labelX} ${labelY})`;
 }
 
 function telemetryValue(value: unknown): string {
@@ -401,9 +496,13 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
   const [streamState, setStreamState] = useState<StreamState>('connecting');
   const [placement, setPlacement] = useState<PlacementDraft | null>(null);
   const [messages, setMessages] = useState<Record<number, ChatMessageRecord[]>>({});
+  const loadedChatsRef = useRef(new Set<number>());
   const [messageText, setMessageText] = useState('');
+  const sendingMessageRef = useRef(false);
   const [shareType, setShareType] = useState<ChatShareType>('TEXT');
   const [scenarioChoice, setScenarioChoice] = useState<{ flightId: number; runId: string } | null>(null);
+  const [scenarioMenuOpen, setScenarioMenuOpen] = useState(false);
+  const [pendingScenarioFlightId, setPendingScenarioFlightId] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -417,9 +516,31 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
   const suppressMapClickRef = useRef(false);
   const isAdmin = hasRole(currentUser, 'Admin');
   const selectedFlight = flights.find((flight) => flight.id === selectedFlightId) ?? flights[0];
+  const chatFlightId = selectedFlight?.id;
+  const isApplyingScenario = pendingScenarioFlightId !== null && pendingScenarioFlightId === selectedFlight?.id;
+  const firstEffectMs = selectedFlight ? firstMapEffectStartsAt(selectedFlight.scenario) : undefined;
+  const secondsToEffect = selectedFlight && firstEffectMs !== undefined && firstEffectMs < selectedFlight.scenario_duration_ms
+    ? Math.ceil((firstEffectMs - selectedFlight.scenario_elapsed_ms) / 1000)
+    : 0;
   const scenarioRunId = selectedFlight && scenarioChoice?.flightId === selectedFlight.id
     ? scenarioChoice.runId
     : selectedFlight ? String(selectedFlight.run_id) : '';
+  const flightMapRenderModels = useMemo(
+    () => flights
+      .map(getFlightMapRenderModel)
+      .filter((model): model is FlightMapRenderModel => model !== null),
+    [flights],
+  );
+  const flightConditionSummary = useMemo(() => {
+    let healthy = 0;
+    for (const flight of flights) {
+      if (flight.condition === 'HEALTHY') healthy += 1;
+    }
+    return { healthy, attention: flights.length - healthy };
+  }, [flights]);
+  const selectFlight = useCallback((flightId: number) => {
+    setSelectedFlightId(flightId);
+  }, []);
 
   useEffect(() => {
     const stage = mapStageRef.current;
@@ -457,46 +578,64 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
 
   useEffect(() => {
     const controller = new AbortController();
-    let active = true;
-    async function load() {
-      const [flightResult, permissionResult] = await Promise.allSettled([
-        getOperationFlights(token, controller.signal),
-        getOperationPermissions(token, controller.signal),
-      ]);
-      if (!active) return;
-
-      if (flightResult.status === 'fulfilled') {
-        const validFlights = reconcileFlightSnapshot([], flightResult.value);
+    const { signal } = controller;
+    void getOperationFlights(token, signal)
+      .then((snapshot) => {
+        if (signal.aborted) return;
+        const validFlights = reconcileFlightSnapshot([], snapshot);
         setFlights(validFlights);
         setSelectedFlightId((current) => current ?? validFlights[0]?.id ?? null);
         setStreamState('connecting');
         setDataMode('api');
-      } else if (isApiUnavailable(flightResult.reason)) {
-        const demoFlights = createDemoFlights(aircraft, currentUser);
-        setFlights(demoFlights);
-        setSelectedFlightId(demoFlights[0]?.id ?? null);
-        setDataMode('demo');
-        setStreamState('snapshot');
-      } else {
-        setDataMode('error');
-        handleError(flightResult.reason);
-      }
-
-      if (permissionResult.status === 'fulfilled') {
-        setPermissions(permissionResult.value);
-      }
-    }
-    void load();
-    return () => {
-      active = false;
-      controller.abort();
-    };
+      }, (requestError: unknown) => {
+        if (signal.aborted) return;
+        if (isApiUnavailable(requestError)) {
+          const demoFlights = createDemoFlights(aircraft, currentUser);
+          setFlights(demoFlights);
+          setSelectedFlightId(demoFlights[0]?.id ?? null);
+          setDataMode('demo');
+          setStreamState('snapshot');
+        } else {
+          setDataMode('error');
+          handleError(requestError);
+        }
+      });
+    return () => controller.abort();
   }, [aircraft, currentUser, handleError, token]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const { signal } = controller;
+    void getOperationPermissions(token, signal).then((granted) => {
+      if (!signal.aborted) setPermissions(granted);
+    }, () => {
+      if (!signal.aborted) setPermissions([]);
+    });
+    return () => controller.abort();
+  }, [token]);
 
   useEffect(() => {
     if (dataMode !== 'api') return;
     let active = true;
     let disconnect: (() => Promise<void>) | undefined;
+    let frame: number | undefined;
+    let pendingFlights = new Map<number, FlightRecord | null>();
+    const queueFlight = (id: number, flight: FlightRecord | null) => {
+      if (!active) return;
+      const previous = pendingFlights.get(id);
+      const next = previous && flight ? reconcileFlight(previous, flight) ?? previous : flight;
+      pendingFlights.set(id, next);
+      if (frame !== undefined) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = undefined;
+        const updates = pendingFlights;
+        pendingFlights = new Map();
+        startTransition(() => {
+          setFlights((current) => applyLiveFlights(current, updates));
+          setSelectedFlightId((current) => current !== null && updates.get(current) === null ? null : current);
+        });
+      });
+    };
     const acceptEvent = (flightId: number, sequence?: number) => {
       if (!sequence) return true;
       const previous = eventSequencesRef.current.get(flightId) ?? 0;
@@ -507,12 +646,11 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
     connectOperationsHub(token, {
       onFlightUpdated: (flight) => {
         if (!acceptEvent(flight.id, flight.event_sequence)) return;
-        setFlights((current) => reconcileFlightUpdate(current, flight));
+        queueFlight(flight.id, flight);
       },
       onFlightRemoved: (flightId, eventSequence) => {
         if (!acceptEvent(flightId, eventSequence)) return;
-        setFlights((current) => current.filter((flight) => flight.id !== flightId));
-        setSelectedFlightId((current) => current === flightId ? null : current);
+        queueFlight(flightId, null);
       },
       onMessagePosted: (message) => {
         setMessages((current) => {
@@ -546,6 +684,7 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
     });
     return () => {
       active = false;
+      if (frame !== undefined) window.cancelAnimationFrame(frame);
       if (disconnect) void disconnect();
     };
   }, [dataMode, handleError, token]);
@@ -573,18 +712,24 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
   }, [dataMode, handleError, streamState, token]);
 
   useEffect(() => {
-    if (!selectedFlight) return;
-    if (messages[selectedFlight.id]) return;
-    if (dataMode === 'demo') return;
-    if (dataMode !== 'api') return;
+    if (dataMode !== 'api' || chatFlightId === undefined || loadedChatsRef.current.has(chatFlightId)) return;
     const controller = new AbortController();
-    getOperationMessages(token, selectedFlight.id, controller.signal)
-      .then((records) => setMessages((current) => ({ ...current, [selectedFlight.id]: records })))
-      .catch((requestError: unknown) => {
-        if (!(requestError instanceof DOMException && requestError.name === 'AbortError')) handleError(requestError);
+    const { signal } = controller;
+    void getOperationMessages(token, chatFlightId, signal)
+      .then((records) => {
+        if (signal.aborted) return;
+        loadedChatsRef.current.add(chatFlightId);
+        setMessages((current) => {
+          const live = current[chatFlightId] ?? [];
+          const combined = new Map(records.map((record) => [record.id, record]));
+          for (const message of live) combined.set(message.id, message);
+          return { ...current, [chatFlightId]: [...combined.values()].sort((a, b) => a.id - b.id) };
+        });
+      }, (requestError: unknown) => {
+        if (!signal.aborted) handleError(requestError);
       });
     return () => controller.abort();
-  }, [currentUser, dataMode, handleError, messages, selectedFlight, token]);
+  }, [chatFlightId, dataMode, handleError, token]);
 
   const availableAircraft = useMemo(() => {
     const activeAircraftIds = new Set(flights.map((flight) => flight.aircraft_id));
@@ -832,12 +977,14 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
 
   async function assignScenario(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedFlight?.can_manage) return;
+    if (busy || !selectedFlight?.can_manage) return;
     const runId = Number(scenarioRunId);
     const run = availableRuns.find((candidate) => candidate.id === runId);
     if (!run || runId === selectedFlight.run_id) return;
 
     setBusy(true);
+    setPendingScenarioFlightId(selectedFlight.id);
+    setScenarioMenuOpen(false);
     setError('');
     setNotice('');
     try {
@@ -853,14 +1000,17 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
             version: selectedFlight.version + 1,
             updated_at_utc: new Date().toISOString(),
           };
-      setFlights((current) => current.map((flight) =>
-        flight.id === saved.id ? saved : flight));
-      setScenarioChoice({ flightId: saved.id, runId: String(saved.run_id) });
+      setFlights((current) => {
+        const latest = current.find((flight) => flight.id === saved.id);
+        // The live feed can deliver this version before the HTTP response.
+        return latest && latest.version < saved.version ? reconcileFlightUpdate(current, saved) : current;
+      });
+      setScenarioChoice((choice) => choice?.flightId === saved.id ? null : choice);
       setNotice(`${saved.scenario_label ?? titleCase(saved.scenario ?? 'Scenario')} assigned to ${saved.tail_number}.`);
     } catch (requestError) {
       handleMapOperationError(requestError);
-      setScenarioChoice(null);
     } finally {
+      setPendingScenarioFlightId(null);
       setBusy(false);
     }
   }
@@ -884,7 +1034,8 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
 
   async function postMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedFlight || !messageText.trim() || !canSendChat || (shareType === 'TELEMETRY' && !canShareTelemetry)) return;
+    if (busy || sendingMessageRef.current || !selectedFlight || !messageText.trim() || !canSendChat || (shareType === 'TELEMETRY' && !canShareTelemetry)) return;
+    sendingMessageRef.current = true;
     setBusy(true);
     setError('');
     try {
@@ -903,23 +1054,20 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
               : shareType === 'TELEMETRY' ? selectedFlight.telemetry : null,
             sent_at_utc: new Date().toISOString(),
           } satisfies ChatMessageRecord;
-      setMessages((current) => ({
-        ...current,
-        [selectedFlight.id]: [...(current[selectedFlight.id] ?? (dataMode === 'demo' ? createDemoMessages(selectedFlight, currentUser) : [])), posted],
-      }));
+      setMessages((current) => {
+        const existing = current[selectedFlight.id] ?? (dataMode === 'demo' ? createDemoMessages(selectedFlight, currentUser) : []);
+        return existing.some((message) => message.id === posted.id)
+          ? current
+          : { ...current, [selectedFlight.id]: [...existing, posted] };
+      });
       setMessageText('');
       setShareType('TEXT');
     } catch (requestError) {
       handleMapOperationError(requestError);
     } finally {
+      sendingMessageRef.current = false;
       setBusy(false);
     }
-  }
-
-  function selectMarker(flightId: number, event?: KeyboardEvent<SVGGElement>) {
-    if (event && event.key !== 'Enter' && event.key !== ' ') return;
-    event?.preventDefault();
-    setSelectedFlightId(flightId);
   }
 
   if (dataMode === 'loading') {
@@ -954,8 +1102,8 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
             <span>{flights.length}</span>
           </div>
           <div className="flight-index-stats" aria-label="Simulated flight condition summary">
-            <span><i className="healthy" />{flights.filter((flight) => flight.condition === 'HEALTHY').length} healthy</span>
-            <span><i className="attention" />{flights.filter((flight) => flight.condition !== 'HEALTHY').length} attention</span>
+            <span><i className="healthy" />{flightConditionSummary.healthy} healthy</span>
+            <span><i className="attention" />{flightConditionSummary.attention} attention</span>
           </div>
           <div className="flight-roster" role="list" aria-label="Simulated flights">
             {flights.map((flight) => (
@@ -1046,6 +1194,9 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
               <strong>{selectedFlight.tail_number}</strong>
               <small>{selectedFlight.display_name}</small>
               <em>{selectedFlight.scenario_label ?? titleCase(selectedFlight.scenario ?? 'Session demo')} / {getMapScenarioEffectLabel(getFlightScenarioEffect(selectedFlight))}</em>
+              {isApplyingScenario ? <small>Saving scenario…</small> : secondsToEffect > 0 && (
+                <small aria-live="off">Replay running · first effect in {secondsToEffect} s</small>
+              )}
             </div>}
             <div className="map-zoom-controls" role="group" aria-label="Map zoom controls">
               <button type="button" aria-label="Zoom in" onClick={() => changeZoom(MAP_ZOOM_STEP)} disabled={viewport.zoom >= MAX_MAP_ZOOM}>+</button>
@@ -1076,21 +1227,10 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
               <path className="map-sphere" d={spherePath} />
               <path className="map-graticule" d={graticulePath} />
               <path className="map-countries" d={countriesPath} />
-              <g className="map-country-hover-layer" aria-label="Countries">
-                {countries.features.map((feature, index) => {
-                  const name = countryFeatureName(feature);
-                  const selected = placement?.scopeType === 'COUNTRY'
-                    && (COUNTRY_NAME_ALIASES[placement.scopeCode] ?? []).some((alias) =>
-                      alias.toLowerCase() === name.toLowerCase());
-                  return <path
-                    key={`${String(feature.id ?? 'country')}-${index}`}
-                    className={`map-country-hitarea${selected ? ' selected' : ''}`}
-                    d={path(feature) ?? ''}
-                    onMouseEnter={() => setHoveredCountry(countryDetails(feature))}
-                    onMouseLeave={() => setHoveredCountry(null)}
-                  ><title>{name}</title></path>;
-                })}
-              </g>
+              <CountryLayer
+                selectedCode={placement?.scopeType === 'COUNTRY' ? placement.scopeCode : ''}
+                onHover={setHoveredCountry}
+              />
               {hoveredCountry && <g className="country-hover-card" transform="translate(20 20)" aria-live="polite" pointerEvents="none">
                 <rect width="238" height="72" rx="6" />
                 <text x="12" y="20" className="country-hover-name">{hoveredCountry.name}</text>
@@ -1098,104 +1238,15 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
                 <text x="12" y="58" className="country-hover-meta">{formatCoordinate(hoveredCountry.latitude, 'N', 'S')} · {formatCoordinate(hoveredCountry.longitude, 'E', 'W')}</text>
               </g>}
               <g className="map-aircraft-layer" clipPath="url(#operations-map-sphere-clip)">
-                {flights.map((flight) => {
-                  const point = projectMarkerCoordinate(flight.latitude, flight.longitude);
-                  if (!point) return null;
-                  const active = flight.id === selectedFlight?.id;
-                  const effect = getFlightScenarioEffect(flight);
-                  const fallProgress = debrisProgress(flight.scenario_elapsed_ms);
-                  return <g
-                    key={flight.id}
-                    className={`aircraft-marker marker-${flight.condition.toLowerCase()}${active ? ' active' : ''} scenario-effect-${effect}`}
-                    transform={`translate(${point[0]} ${point[1]}) scale(${1 / viewport.zoom})`}
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`${flight.tail_number}, simulated position ${formatCoordinate(flight.latitude, 'N', 'S')}, ${formatCoordinate(flight.longitude, 'E', 'W')}, ${getMapScenarioEffectLabel(effect)}, scenario ${flight.scenario_label ?? flight.scenario ?? 'session demo'}`}
-                    onClick={(event) => { event.stopPropagation(); setSelectedFlightId(flight.id); }}
-                    onKeyDown={(event) => selectMarker(flight.id, event)}
-                  >
-                    {active && <circle className="marker-selection-ring" cy="9" r="23" />}
-                    <ellipse className="marker-ground-shadow" cx="0" cy="9" rx={active ? 11 : 8} ry={active ? 4.5 : 3.5} />
-                    <circle className="marker-pulse" cy="9" r={active ? 18 : 13} />
-                    <circle className="marker-core" cy="9" r={active ? 5.5 : 4.5} />
-                    {showsAircraft(effect) && <line className="marker-altitude-link" x1="0" y1="4" x2="0" y2="-7" />}
-                    <g className="marker-flight-body" transform="translate(0 -13)">
-                      {showsAircraft(effect) && <>
-                        <g className="marker-contrail" transform={`rotate(${flight.heading_deg})`}>
-                          <circle cx="-12" cy="0" r="2.4" />
-                          <circle cx="-18" cy="0" r="1.7" />
-                          <circle cx="-24" cy="0" r="1.1" />
-                        </g>
-                        <g className="marker-plane-heading" transform={`rotate(${flight.heading_deg})`}>
-                          <path className="marker-aircraft" d="M0-13 L3.2-4.5 L10-1.5 L10 1.5 L3.5 0.8 L2.2 7.5 L6 9.8 L6 11.5 L0 10 L-6 11.5 L-6 9.8 L-2.2 7.5 L-3.5 0.8 L-10 1.5 L-10-1.5 L-3.2-4.5 Z" />
-                        </g>
-                      </>}
-                      {effect === 'communication' && <g className="scenario-effect scenario-communication" aria-hidden="true">
-                        <path d="M-17 2 A18 18 0 0 1 17 2" />
-                        <path d="M-11 7 A11 11 0 0 1 11 7" />
-                        <circle cx="0" cy="10" r="2" />
-                      </g>}
-                      {effect === 'sensor' && <g className="scenario-effect scenario-sensor" aria-hidden="true">
-                        <path d="M0-17 L-5-7 L2-5 L-3 8" />
-                        <circle cx="-12" cy="-10" r="2" /><circle cx="12" cy="8" r="2" />
-                      </g>}
-                      {effect === 'thermal' && <g className="scenario-effect scenario-thermal" aria-hidden="true">
-                        <path d="M-13 16 C-18 9 -7 4 -13-4" /><path d="M0 18 C-5 10 6 5 0-4" /><path d="M13 16 C8 9 19 4 13-4" />
-                        <circle className="thermal-halo" cx="0" cy="0" r="18" />
-                      </g>}
-                      {effect === 'fire' && <g className="scenario-effect scenario-fire" aria-hidden="true">
-                        <path className="flame flame-large" d="M0 8 C-12 18 -8 34 0 42 C9 34 13 19 0 8Z" />
-                        <path className="flame flame-small" d="M-9 10 C-16 16 -13 25 -7 30 C-3 23 -3 15 -9 10Z" />
-                        <path className="flame flame-small" d="M9 10 C16 16 13 25 7 30 C3 23 3 15 9 10Z" />
-                        <circle className="smoke" cx="-5" cy="39" r="5" /><circle className="smoke" cx="6" cy="43" r="4" />
-                      </g>}
-                      {effect === 'power' && <g className="scenario-effect scenario-power" aria-hidden="true">
-                        <path d="M-20-8 L-12-2 L-19 5 L-8 10" />
-                        <path d="M18-12 L10-5 L17 3 L7 9" />
-                        <circle cx="-8" cy="-14" r="2" /><circle cx="12" cy="-16" r="2" />
-                      </g>}
-                      {effect === 'multiple' && <g className="scenario-effect scenario-multiple" aria-hidden="true">
-                        <circle cx="-9" cy="-14" r="5" /><circle cx="8" cy="-12" r="7" />
-                        <path d="M-20 8 L-12 3 M20 8 L12 3 M0 16 L0 8" />
-                        <circle className="smoke" cx="-14" cy="-24" r="4" /><circle className="smoke" cx="12" cy="-25" r="5" />
-                      </g>}
-                      {effect === 'recovery' && <g className="scenario-effect scenario-recovery" aria-hidden="true">
-                        <circle cx="0" cy="0" r="21" /><circle cx="0" cy="0" r="15" />
-                      </g>}
-                      {effect === 'airburst' && <g className="scenario-effect scenario-airburst" aria-hidden="true">
-                        <circle className="airburst-wave" cx="0" cy="0" r="11" />
-                        <circle className="airburst-core" cx="0" cy="0" r="7" />
-                        <path d="M0-8 L0-28 M7-5 L23-19 M9 2 L29 8 M-7-5 L-23-19 M-9 2 L-29 8 M0 8 L0 27" />
-                      </g>}
-                    </g>
-                    {effect === 'debris' && <g className="scenario-effect scenario-debris" aria-hidden="true">
-                      {DEBRIS_FRAGMENTS.map((fragment, index) => <polygon
-                        key={fragment.shape}
-                        points={fragment.shape}
-                        transform={`translate(${fragment.x + fragment.dx * fallProgress} ${fragment.y + fragment.dy * fallProgress}) rotate(${fragment.rotation * fallProgress})`}
-                        className={`debris-fragment fragment-${index + 1}`}
-                      />)}
-                      <path className="debris-smoke" d={`M0 -20 Q${-8 + fallProgress * 5} ${-8 + fallProgress * 12} ${-4 + fallProgress * 8} ${fallProgress * 18}`} />
-                    </g>}
-                    {effect === 'impact-land' && <g className="scenario-effect scenario-impact-land" transform="translate(0 9)" aria-hidden="true">
-                      <circle className="impact-ring" cx="0" cy="0" r="12" />
-                      <circle className="impact-core" cx="0" cy="0" r="6" />
-                      <path className="debris" d="M-3-4 L-18-18 M4-3 L18-15 M-2 5 L-13 20 M3 5 L16 18" />
-                    </g>}
-                    {effect === 'impact-water' && <g className="scenario-effect scenario-impact-water" transform="translate(0 9)" aria-hidden="true">
-                      <circle className="splash-ring" cx="0" cy="0" r="13" />
-                      <path className="water-spray" d="M0 3 C-8-7 -5-19 0-25 C5-19 8-7 0 3Z" />
-                      <path className="debris" d="M-3 0 L-16-17 M3 0 L14-15" />
-                    </g>}
-                    {effect === 'aftermath-land' && <g className="scenario-effect scenario-aftermath-land" transform="translate(0 9)" aria-hidden="true">
-                      <ellipse cx="0" cy="2" rx="13" ry="5" /><path d="M-9-1 L-2-7 L3 0 L10-5 M-5 4 L6 3" />
-                    </g>}
-                    {effect === 'aftermath-water' && <g className="scenario-effect scenario-aftermath-water" transform="translate(0 9)" aria-hidden="true">
-                      <ellipse cx="0" cy="1" rx="14" ry="5" /><path d="M-9-1 L-3-5 L2 1 L9-3" />
-                    </g>}
-                    <g className="marker-label" transform={markerLabelTransform(point, viewport)}><rect width={MARKER_LABEL_WIDTH} height="25" rx="4" /><text x="9" y="17">{flight.tail_number}</text></g>
-                  </g>;
-                })}
+                {flightMapRenderModels.map(({ flight, point, effect }) => <OperationsMapAircraftMarker
+                  key={flight.id}
+                  flight={flight}
+                  point={point}
+                  effect={effect}
+                  active={flight.id === selectedFlight?.id}
+                  viewport={viewport}
+                  onSelect={selectFlight}
+                />)}
                 {placement && flightInputFromDraft(placement) && (() => {
                   const draft = flightInputFromDraft(placement);
                   const point = draft ? projectMarkerCoordinate(draft.latitude, draft.longitude) : null;
@@ -1231,8 +1282,66 @@ export function OperationsMap({ token, currentUser, aircraft, runs = [] }: Opera
               </div>
               <div className="flight-scenario"><span>Assigned scenario</span><strong>{selectedFlight.scenario_label ?? titleCase(selectedFlight.scenario ?? 'Session demo')}</strong><small>{selectedFlight.run_id > 0 ? `Run #${selectedFlight.run_id} / ${selectedFlight.tail_number}` : 'Session data'}</small></div>
               {selectedFlight.can_manage && availableRuns.length > 0 && <form className="flight-scenario-assignment" onSubmit={assignScenario}>
-                <label><span>Change scenario for {selectedFlight.tail_number}</span><select aria-label={`Scenario assigned to ${selectedFlight.tail_number}`} value={scenarioRunId} onChange={(event) => setScenarioChoice({ flightId: selectedFlight.id, runId: event.target.value })}>{availableRuns.map((run) => <option value={run.id} key={run.id}>{run.label} / run {run.id}</option>)}{!availableRuns.some((run) => run.id === selectedFlight.run_id) && <option value={selectedFlight.run_id}>{selectedFlight.scenario_label ?? `Current run ${selectedFlight.run_id}`}</option>}</select></label>
-                <button type="submit" className="button secondary-button" disabled={busy || Number(scenarioRunId) === selectedFlight.run_id}>Apply scenario</button>
+                <div className="scenario-dropdown-field">
+                  <span>Change scenario for {selectedFlight.tail_number}</span>
+                  <div className={`scenario-dropdown${scenarioMenuOpen ? ' open' : ''}`} onBlur={(event) => {
+                    if (!event.currentTarget.contains(event.relatedTarget)) setScenarioMenuOpen(false);
+                  }}>
+                    <button
+                      type="button"
+                      className="scenario-dropdown-trigger"
+                      aria-label={`Scenario assigned to ${selectedFlight.tail_number}`}
+                      aria-haspopup="listbox"
+                      aria-expanded={scenarioMenuOpen}
+                      aria-controls={`scenario-options-${selectedFlight.id}`}
+                      disabled={isApplyingScenario}
+                      onClick={() => setScenarioMenuOpen((open) => !open)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'ArrowDown') {
+                          event.preventDefault();
+                          setScenarioMenuOpen(true);
+                        }
+                        if (event.key === 'Escape') setScenarioMenuOpen(false);
+                      }}
+                    >
+                      <span>
+                        <strong>{availableRuns.find((run) => String(run.id) === scenarioRunId)?.label ?? selectedFlight.scenario_label ?? 'Current scenario'}</strong>
+                        <small>Run #{scenarioRunId}</small>
+                      </span>
+                      <i aria-hidden="true" />
+                    </button>
+                    {scenarioMenuOpen && <div className="scenario-dropdown-menu" id={`scenario-options-${selectedFlight.id}`} role="listbox" aria-label={`Available scenarios for ${selectedFlight.tail_number}`}>
+                      {availableRuns.map((run) => <button
+                        type="button"
+                        role="option"
+                        aria-selected={String(run.id) === scenarioRunId}
+                        className={String(run.id) === scenarioRunId ? 'selected' : ''}
+                        key={run.id}
+                        onClick={() => {
+                          setScenarioChoice({ flightId: selectedFlight.id, runId: String(run.id) });
+                          setScenarioMenuOpen(false);
+                        }}
+                      >
+                        <span className={`scenario-option-state state-${run.final_state.toLowerCase()}`} aria-hidden="true" />
+                        <span><strong>{run.label}</strong><small>Run #{run.id} / {Math.round(run.duration_ms / 1000)} s</small></span>
+                        {String(run.id) === scenarioRunId && <span className="scenario-option-check" aria-hidden="true">&#10003;</span>}
+                      </button>)}
+                      {!availableRuns.some((run) => run.id === selectedFlight.run_id) && <button
+                        type="button"
+                        role="option"
+                        aria-selected={String(selectedFlight.run_id) === scenarioRunId}
+                        className={String(selectedFlight.run_id) === scenarioRunId ? 'selected' : ''}
+                        onClick={() => {
+                          setScenarioChoice({ flightId: selectedFlight.id, runId: String(selectedFlight.run_id) });
+                          setScenarioMenuOpen(false);
+                        }}
+                      ><span className="scenario-option-state state-normal" aria-hidden="true" /><span><strong>{selectedFlight.scenario_label ?? `Current run ${selectedFlight.run_id}`}</strong><small>Current aircraft run</small></span></button>}
+                    </div>}
+                  </div>
+                </div>
+                <button type="submit" className="button secondary-button" aria-busy={isApplyingScenario} disabled={busy || Number(scenarioRunId) === selectedFlight.run_id}>
+                  {isApplyingScenario ? 'Applying scenario…' : 'Apply scenario'}
+                </button>
                 <small>This changes only the selected aircraft's replay and map effect. Its destination remains the same.</small>
               </form>}
               <div className="flight-owner"><span>Owner</span><strong>{selectedFlight.owner_display_name}</strong><small>@{selectedFlight.owner_username}</small></div>

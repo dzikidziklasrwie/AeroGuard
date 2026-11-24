@@ -274,6 +274,31 @@ jobs:
             exit 1
           fi
 
+          replay_headers="$(curl --fail --silent --show-error \
+            --dump-header - \
+            --output /dev/null \
+            --header 'Accept-Encoding: gzip' \
+            http://127.0.0.1:8080/data/normal-operation.jsonl)"
+          replay_headers="${replay_headers//$'\r'/}"
+          grep --quiet --ignore-case '^Content-Type: application/x-ndjson' <<<"$replay_headers"
+          grep --quiet --ignore-case '^Content-Encoding: gzip$' <<<"$replay_headers"
+          replay_etag="$(awk -F': ' 'tolower($1) == "etag" { print $2; exit }' <<<"$replay_headers")"
+          test -n "$replay_etag"
+          replay_status="$(curl --silent --show-error \
+            --output /dev/null \
+            --write-out '%{http_code}' \
+            --header 'Accept-Encoding: gzip' \
+            --header "If-None-Match: $replay_etag" \
+            http://127.0.0.1:8080/data/normal-operation.jsonl)"
+          test "$replay_status" = '304'
+
+          manifest_headers="$(curl --fail --silent --show-error \
+            --dump-header - \
+            --output /dev/null \
+            http://127.0.0.1:8080/data/manifest.json)"
+          manifest_headers="${manifest_headers//$'\r'/}"
+          grep --quiet --ignore-case '^Content-Type: application/json' <<<"$manifest_headers"
+
           login_payload="$(python3 -c \
             'import json, os; print(json.dumps({"username": "admin", "password": os.environ["AEROGUARD_ADMIN_PASSWORD"]}))')"
           login_response="$(curl --fail --silent \

@@ -57,4 +57,20 @@ describe('usePlayback', () => {
     act(() => vi.advanceTimersByTime(200));
     expect(result.current.elapsedMs).toBeGreaterThan(0);
   });
+
+  it('skips hidden frames and resumes at the current loop position', () => {
+    vi.useFakeTimers();
+    const { result, rerender } = renderHook(({ visible }) => usePlayback(1_000, 'run-a', visible), {
+      initialProps: { visible: true },
+    });
+    act(() => vi.advanceTimersByTime(300));
+    const lastVisibleFrame = result.current.elapsedMs;
+    rerender({ visible: false });
+    act(() => vi.advanceTimersByTime(1_200));
+    expect(result.current.elapsedMs).toBe(lastVisibleFrame);
+
+    rerender({ visible: true });
+    act(() => vi.advanceTimersByTime(100));
+    expect(result.current.elapsedMs).toBeCloseTo(500);
+  });
 });

@@ -7,6 +7,7 @@ namespace AeroGuard.Api.Operations;
 
 public sealed class FlightSnapshotFactory(
     ArchiveRepository archiveRepository,
+    FlightTelemetryCache telemetryCache,
     TimeProvider timeProvider)
 {
     public async Task<FlightDto> CreateAsync(
@@ -100,10 +101,21 @@ public sealed class FlightSnapshotFactory(
     {
         var tick = Math.Max(1, flight.ScenarioTickMs);
         var timestamp = scenarioElapsedMs - (scenarioElapsedMs % tick);
-        var records = await archiveRepository.GetRecordsAsync(
+        return await telemetryCache.GetOrLoadAsync(
             flight.RunId,
-            new RecordFilter("telemetry", null, null, timestamp, timestamp, 20),
+            timestamp,
+            () => LoadTelemetryAsync(flight.RunId, timestamp),
             cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<SubsystemTelemetryDto>> LoadTelemetryAsync(
+        long runId,
+        long timestamp)
+    {
+        var records = await archiveRepository.GetRecordsAsync(
+            runId,
+            new RecordFilter("telemetry", null, null, timestamp, timestamp, 20),
+            CancellationToken.None);
         var telemetry = new List<SubsystemTelemetryDto>(records.Count);
         foreach (var record in records)
         {
@@ -119,7 +131,7 @@ public sealed class FlightSnapshotFactory(
                     : JsonSerializer.SerializeToElement(new { })));
         }
 
-        return telemetry;
+        return telemetry.AsReadOnly();
     }
 
 }

@@ -114,9 +114,11 @@ builder.Services.AddSingleton<AccountAdministrationService>();
 builder.Services.AddSingleton<BootstrapAdminService>();
 builder.Services.AddSingleton<AircraftService>();
 builder.Services.AddSingleton<OperationPermissionService>();
+builder.Services.AddSingleton<FlightTelemetryCache>();
 builder.Services.AddSingleton<FlightSnapshotFactory>();
 builder.Services.AddSingleton<OperationsBroadcaster>();
 builder.Services.AddSingleton<OperationsConnectionRegistry>();
+builder.Services.AddSingleton<OperationsBroadcastRefreshSignal>();
 builder.Services.AddSingleton<OperationsService>();
 builder.Services.AddHostedService<FlightSimulationWorker>();
 builder.Services.AddSignalR()
@@ -235,33 +237,11 @@ app.MapGet("/api/runs/{id:long:min(1)}", async Task<Results<Ok<RunDetailDto>, No
     .WithName("GetRun")
     .WithSummary("Get one archived simulation run");
 
-app.MapGet("/api/runs/{id:long:min(1)}/replay", async Task<IResult> (
-    long id,
-    HttpContext context,
-    ArchiveRepository archive,
-    CancellationToken cancellationToken) =>
-{
-    var run = await archive.GetRunAsync(id, cancellationToken);
-    if (run is null)
-    {
-        return TypedResults.NotFound();
-    }
-
-    var bytes = await archive.GetReplayAsync(id, cancellationToken);
-    if (bytes is null)
-    {
-        return TypedResults.NotFound();
-    }
-
-    context.Response.Headers.ETag = $"\"sha256-{run.SourceSha256}\"";
-    return Results.File(
-        bytes,
-        contentType: "application/x-ndjson",
-        fileDownloadName: $"{run.Scenario}.jsonl");
-})
+app.MapGet("/api/runs/{id:long:min(1)}/replay", ArchivedReplayEndpoint.GetAsync)
     .WithName("GetReplay")
     .WithSummary("Download the original JSONL artifact")
     .Produces(StatusCodes.Status200OK, contentType: "application/x-ndjson")
+    .Produces(StatusCodes.Status304NotModified)
     .Produces(StatusCodes.Status404NotFound);
 
 app.MapGet("/api/runs/{id:long:min(1)}/records", async Task<IResult> (

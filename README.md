@@ -41,7 +41,7 @@ Repository: [github.com/dzikidziklasrwie/AeroGuard](https://github.com/dzikidzik
 | Map interaction | Validated coordinates, bounded transit and patrol, last-valid-position recovery, sphere-clipped markers, 1x-6x zoom, pan, reset, and selected-aircraft focus |
 | Scenario-linked map effects | Each flight keeps a visible identity, ground shadow, selected-aircraft card, and deterministic visuals derived from its stored telemetry timeline |
 | UI separation | React reads stored C++ output through REST or a static fallback; it doesn't recreate thresholds or state transitions |
-| Work reduction | Idle broadcasts stop before database reads, flight data is prepared once per update, replay state is derived in one pass, and the map module loads on demand |
+| Work reduction | Scenario saves return before SignalR fan-out. The map combines live updates per frame, and offscreen replay panels stop rendering while their clock advances. Gzip and ETags reduce repeat downloads. |
 | Delivery | CMake presets, Windows/Linux CI, xUnit, clang-tidy, ASan/UBSan, Dependabot, and multi-stage Docker |
 
 ```mermaid
@@ -151,11 +151,16 @@ the selected aircraft. Country routes use bounded catalog profiles plus a
 local fallback; they don't claim political-border containment.
 Every marker links a map-position shadow to its aircraft silhouette and keeps
 the tail number visible. A selected-aircraft card repeats the tail number,
-display name, assigned scenario, and active effect. Communication loss adds
-signal rings, invalid sensor data adds an amber alert, power fluctuation adds
-electrical arcs, simultaneous failures add smoke and fault pulses, and recovery
-adds a green ring. The 105-second overheating replay shows sustained heat,
-fire from 60 to 80 seconds, airframe breakup, descending debris, and impact.
+display name, assigned scenario, and active effect. The card shows when the
+scenario is saving and counts down to the first scheduled effect after it starts.
+Communication loss surrounds
+the aircraft with three wide signal rings and a red disconnect mark. Invalid
+sensor data adds an amber alert, power fluctuation sends bright electrical arcs
+between pulsing nodes, and simultaneous failures add smoke and fault pulses.
+Recovery adds a green wash, orbit, confirmation mark, and moving particles. The
+105-second overheating replay starts with a heat halo and rising waves. Fire
+then wraps around the aircraft from 60 to 80 seconds, with smoke and embers,
+before airframe breakup, descending debris, and impact.
 Land receives an impact burst and wreckage; water receives a splash and
 floating debris without a second explosion. The route holds at the breakup
 point until that replay cycle restarts. These are fictional presentation

@@ -507,6 +507,7 @@ function AuthenticatedWorkspace({ session, runs, onSignedOut }: { session: Acces
   const [users, setUsers] = useState<UserAccount[]>([]);
   const [roles, setRoles] = useState<RoleRecord[]>([]);
   const [audit, setAudit] = useState<AuditRecord[]>([]);
+  const [accountsState, setAccountsState] = useState<'idle' | 'loading' | 'ready'>('idle');
   const [view, setView] = useState<WorkspaceView>('map');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -530,6 +531,7 @@ function AuthenticatedWorkspace({ session, runs, onSignedOut }: { session: Acces
     ]);
     setUsers(nextUsers);
     setRoles(nextRoles);
+    setAccountsState('ready');
   }, [isAdmin, session.token]);
 
   const refreshAudit = useCallback(async (signal?: AbortSignal) => {
@@ -541,25 +543,34 @@ function AuthenticatedWorkspace({ session, runs, onSignedOut }: { session: Acces
     Promise.all([
       getCurrentUser(session.token, controller.signal),
       getAircraft(session.token, controller.signal),
-      isAdmin ? getUsers(session.token, controller.signal) : Promise.resolve([]),
-      isAdmin ? getRoles(session.token, controller.signal) : Promise.resolve([]),
-      isAdmin ? getAudit(session.token, controller.signal) : Promise.resolve([]),
-    ]).then(([nextUser, nextAircraft, nextUsers, nextRoles, nextAudit]) => {
+    ]).then(([nextUser, nextAircraft]) => {
+      if (controller.signal.aborted) return;
       setCurrentUser(nextUser);
       setAircraft(nextAircraft);
-      setUsers(nextUsers);
-      setRoles(nextRoles);
-      setAudit(nextAudit);
     }).catch((requestError: unknown) => {
-      if (requestError instanceof DOMException && requestError.name === 'AbortError') return;
+      if (controller.signal.aborted) return;
       if (requestError instanceof ApiError && requestError.status === 401) {
         onSignedOut();
         return;
       }
       handleRequestError(requestError);
-    }).finally(() => setLoading(false));
+    }).finally(() => {
+      if (!controller.signal.aborted) setLoading(false);
+    });
     return () => controller.abort();
-  }, [handleRequestError, isAdmin, onSignedOut, session.token]);
+  }, [handleRequestError, onSignedOut, session.token]);
+
+  async function openAccountView(nextView: 'fleet' | 'accounts') {
+    setView(nextView);
+    if (!isAdmin || accountsState !== 'idle') return;
+    setAccountsState('loading');
+    try {
+      await refreshAccounts();
+    } catch (requestError) {
+      setAccountsState('idle');
+      handleRequestError(requestError);
+    }
+  }
 
   const runAction = useCallback(async (successMessage: string, action: () => Promise<unknown>) => {
     setBusy(true);
@@ -585,13 +596,16 @@ function AuthenticatedWorkspace({ session, runs, onSignedOut }: { session: Acces
       </header>
       <nav className="workspace-tabs" aria-label="Operations workspace views">
         <button type="button" className={view === 'map' ? 'active' : ''} aria-pressed={view === 'map'} onClick={() => setView('map')}>Operations map</button>
-        <button type="button" className={view === 'fleet' ? 'active' : ''} aria-pressed={view === 'fleet'} onClick={() => setView('fleet')}>Fleet</button>
-        {isAdmin && <button type="button" className={view === 'accounts' ? 'active' : ''} aria-pressed={view === 'accounts'} onClick={() => setView('accounts')}>People and roles</button>}
+        <button type="button" className={view === 'fleet' ? 'active' : ''} aria-pressed={view === 'fleet'} onClick={() => void openAccountView('fleet')}>Fleet</button>
+        {isAdmin && <button type="button" className={view === 'accounts' ? 'active' : ''} aria-pressed={view === 'accounts'} onClick={() => void openAccountView('accounts')}>People and roles</button>}
         {isAdmin && <button type="button" className={view === 'audit' ? 'active' : ''} aria-pressed={view === 'audit'} onClick={async () => { setView('audit'); try { await refreshAudit(); } catch (requestError) { handleRequestError(requestError); } }}>Audit log</button>}
       </nav>
       {error && <p className="workspace-message error" role="alert">{error}</p>}
       {notice && <p className="workspace-message success" role="status">{notice}</p>}
-      {loading ? <div className="workspace-loading" role="status"><span className="loader" />Loading account and fleet records...</div> : (
+      {loading ? <div className="workspace-loading" role="status"><span className="loader" />Loading account and fleet records...</div>
+        : accountsState === 'loading' && (view === 'fleet' || view === 'accounts') ? (
+          <div className="workspace-loading" role="status"><span className="loader" />Loading account roles...</div>
+        ) : (
         <>
           {view === 'map' && <Suspense fallback={<div className="operations-map-loading" role="status"><span className="loader" />Loading map module...</div>}><OperationsMap token={session.token} currentUser={currentUser} aircraft={aircraft} runs={runs} onUnauthorized={onSignedOut} /></Suspense>}
           {view === 'fleet' && <FleetPanel token={session.token} currentUser={currentUser} aircraft={aircraft} users={users} busy={busy} runAction={runAction} refreshFleet={async () => { try { await refreshFleet(); } catch (requestError) { handleRequestError(requestError); } }} />}

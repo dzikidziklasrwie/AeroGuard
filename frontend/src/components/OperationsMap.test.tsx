@@ -204,21 +204,29 @@ describe('OperationsMap', () => {
       scenario_elapsed_ms: 65_000,
       scenario_duration_ms: 105_000,
     };
-    vi.stubGlobal('fetch', apiMock({ flights: [overheating] }));
+    const communication = { ...flight, id: 45, tail_number: 'N305AG', scenario: 'communication-interruption', scenario_label: 'Communication interruption', scenario_elapsed_ms: 15_000 };
+    const power = { ...flight, id: 46, tail_number: 'N406AG', scenario: 'power-fluctuations', scenario_label: 'Power fluctuations', scenario_elapsed_ms: 15_000 };
+    const recovery = { ...flight, id: 47, tail_number: 'N507AG', scenario: 'recovery-after-temporary-failure', scenario_label: 'Recovery after temporary failure', scenario_elapsed_ms: 15_000 };
+    vi.stubGlobal('fetch', apiMock({ flights: [overheating, communication, power, recovery] }));
     render(<OperationsMap token="session-token" currentUser={owner} aircraft={aircraft} runs={runs} onUnauthorized={vi.fn()} />);
 
     const marker = await screen.findByRole('button', { name: /N204AG, simulated position/ });
     expect(marker.querySelector('.scenario-fire')).toBeInTheDocument();
+    expect(marker.querySelector('.fire-glow')).toBeInTheDocument();
+    expect(marker.querySelectorAll('.ember')).toHaveLength(3);
+    expect(screen.getByRole('button', { name: /N305AG, simulated position/ }).querySelectorAll('.radio-ring')).toHaveLength(3);
+    expect(screen.getByRole('button', { name: /N406AG, simulated position/ }).querySelectorAll('.power-arc')).toHaveLength(3);
+    expect(screen.getByRole('button', { name: /N507AG, simulated position/ }).querySelector('.recovery-check')).toBeInTheDocument();
     expect(screen.getByText('Simulated overheating / Aircraft fire')).toBeInTheDocument();
     await waitFor(() => expect(hubMocks.connect).toHaveBeenCalled());
     const handlers = hubMocks.connect.mock.calls[0][1];
 
     act(() => handlers.onFlightUpdated({ ...overheating, scenario_elapsed_ms: 80_000, event_sequence: 301 }));
-    expect(marker.querySelector('.scenario-airburst')).toBeInTheDocument();
+    await waitFor(() => expect(marker.querySelector('.scenario-airburst')).toBeInTheDocument());
     expect(marker.querySelector('.marker-aircraft')).not.toBeInTheDocument();
 
     act(() => handlers.onFlightUpdated({ ...overheating, scenario_elapsed_ms: 85_000, event_sequence: 302 }));
-    expect(marker.querySelectorAll('.debris-fragment')).toHaveLength(4);
+    await waitFor(() => expect(marker.querySelectorAll('.debris-fragment')).toHaveLength(4));
 
     act(() => handlers.onFlightUpdated({
       ...overheating,
@@ -227,7 +235,7 @@ describe('OperationsMap', () => {
       longitude: -30,
       event_sequence: 303,
     }));
-    expect(marker.querySelector('.scenario-impact-water')).toBeInTheDocument();
+    await waitFor(() => expect(marker.querySelector('.scenario-impact-water')).toBeInTheDocument());
     expect(marker.querySelector('.scenario-impact-land')).not.toBeInTheDocument();
   });
 
@@ -264,7 +272,14 @@ describe('OperationsMap', () => {
     render(<OperationsMap token="session-token" currentUser={owner} aircraft={aircraft} runs={runs} onUnauthorized={vi.fn()} />);
 
     await screen.findByRole('button', { name: /N204AG, simulated position/ });
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Scenario assigned to N204AG' }), '12');
+    const scenarioTrigger = screen.getByRole('button', { name: 'Scenario assigned to N204AG' });
+    await user.click(scenarioTrigger);
+    expect(scenarioTrigger).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('listbox', { name: 'Available scenarios for N204AG' })).toBeInTheDocument();
+    await user.click(screen.getByRole('option', { name: /Simulated overheating/ }));
+    expect(scenarioTrigger).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('listbox', { name: 'Available scenarios for N204AG' })).not.toBeInTheDocument();
+    expect(scenarioTrigger).toHaveTextContent('Simulated overheating');
     await user.click(screen.getByRole('button', { name: 'Apply scenario' }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/operations/flights/44/scenario', expect.objectContaining({
@@ -272,7 +287,62 @@ describe('OperationsMap', () => {
       body: JSON.stringify({ run_id: 12, expected_version: 3 }),
     })));
     expect(screen.getByText('Simulated overheating / Normal visual state')).toBeInTheDocument();
+    expect(screen.getByText('Replay running · first effect in 10 s')).toBeInTheDocument();
     expect(screen.getByText('En route to the global patrol route')).toBeInTheDocument();
+  });
+
+  it('shows an assignment in progress and keeps a newer live update when the save returns', async () => {
+    let completeSave!: (result: Response) => void;
+    const pendingSave = new Promise<Response>((resolve) => { completeSave = resolve; });
+    const fallback = apiMock();
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
+      String(input) === '/api/operations/flights/44/scenario' ? pendingSave : fallback(input, init));
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    render(<OperationsMap token="session-token" currentUser={owner} aircraft={aircraft} runs={runs} onUnauthorized={vi.fn()} />);
+
+    await user.click(await screen.findByRole('button', { name: 'Scenario assigned to N204AG' }));
+    await user.click(screen.getByRole('option', { name: /Simulated overheating/ }));
+    await user.click(screen.getByRole('button', { name: 'Apply scenario' }));
+    expect(screen.getByRole('button', { name: /Applying scenario/ })).toBeDisabled();
+
+    const saved = {
+      ...flight,
+      run_id: 12,
+      scenario: 'simulated-overheating',
+      scenario_label: 'Simulated overheating',
+      scenario_elapsed_ms: 0,
+      scenario_duration_ms: 105_000,
+      version: flight.version + 1,
+    };
+    const handlers = hubMocks.connect.mock.calls[0][1];
+    act(() => handlers.onFlightUpdated({ ...saved, scenario_elapsed_ms: 15_000, event_sequence: 4 }));
+    await screen.findByText('Simulated overheating / Sustained overheating');
+    await act(async () => completeSave(response(saved)));
+
+    expect(screen.getByText(/Simulated overheating assigned to N204AG/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /N204AG, simulated position/ }).querySelector('.thermal-core')).toBeInTheDocument();
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/scenario'))).toHaveLength(1);
+  });
+
+  it('loads flight chat once while the live feed updates the selected aircraft', async () => {
+    let completeChat!: (result: Response) => void;
+    const pendingChat = new Promise<Response>((resolve) => { completeChat = resolve; });
+    const fallback = apiMock();
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) =>
+      String(input).includes('/messages?') ? pendingChat : fallback(input, init));
+    vi.stubGlobal('fetch', fetchMock);
+    render(<OperationsMap token="session-token" currentUser={owner} aircraft={aircraft} runs={runs} onUnauthorized={vi.fn()} />);
+
+    await screen.findByRole('button', { name: /N204AG, simulated position/ });
+    const handlers = hubMocks.connect.mock.calls[0][1];
+    act(() => handlers.onFlightUpdated({ ...flight, latitude: 52.3, event_sequence: 5 }));
+    act(() => handlers.onFlightUpdated({ ...flight, latitude: 52.4, event_sequence: 6 }));
+
+    const chatCalls = fetchMock.mock.calls.filter(([url]) => String(url).includes('/messages?'));
+    expect(chatCalls).toHaveLength(1);
+    expect(chatCalls[0][1]?.signal?.aborted).toBe(false);
+    await act(async () => completeChat(response([])));
   });
 
   it('clips boundary markers to the globe and keeps their labels pointed inward', async () => {
@@ -342,9 +412,12 @@ describe('OperationsMap', () => {
     await waitFor(() => expect(hubMocks.connect).toHaveBeenCalled());
     const handlers = hubMocks.connect.mock.calls[0][1];
 
-    act(() => handlers.onFlightUpdated({ ...flight, latitude: 91, event_sequence: 201 }));
+    act(() => {
+      handlers.onFlightUpdated({ ...flight, latitude: 52.25, event_sequence: 200 });
+      handlers.onFlightUpdated({ ...flight, latitude: 91, event_sequence: 201 });
+    });
 
-    expect(screen.getByRole('button', { name: /N204AG, simulated position 52.23° N, 21.01° E/ })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /N204AG, simulated position 52.25° N, 21.01° E/ })).toBeInTheDocument();
     expect(screen.getByText('Transit 40%')).toBeInTheDocument();
 
     act(() => handlers.onFlightUpdated({ ...flight, id: 99, tail_number: 'BAD-99', longitude: 181, event_sequence: 202 }));
@@ -375,13 +448,13 @@ describe('OperationsMap', () => {
     const handlers = hubMocks.connect.mock.calls[0][1];
 
     act(() => handlers.onFlightRemoved(44, 200));
-    expect(screen.queryByRole('button', { name: /N204AG, simulated position/ })).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('button', { name: /N204AG, simulated position/ })).not.toBeInTheDocument());
 
     act(() => handlers.onFlightUpdated({ ...flight, event_sequence: 199 }));
     expect(screen.queryByRole('button', { name: /N204AG, simulated position/ })).not.toBeInTheDocument();
 
     act(() => handlers.onFlightUpdated({ ...flight, event_sequence: 201 }));
-    expect(screen.getByRole('button', { name: /N204AG, simulated position/ })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /N204AG, simulated position/ })).toBeInTheDocument();
   });
 
   it('places an owned aircraft from a map click and sends the REST payload', async () => {
@@ -505,7 +578,15 @@ describe('OperationsMap', () => {
   });
 
   it('gates chat controls by permission and posts the selected share type', async () => {
-    const fetchMock = apiMock({ permissions: ['CHAT_SEND', 'TELEMETRY_SHARE'] });
+    const fallback = apiMock({ permissions: ['CHAT_SEND', 'TELEMETRY_SHARE'] });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const result = await fallback(input, init);
+      if (String(input).endsWith('/messages') && init?.method === 'POST') {
+        const message = await result.json();
+        hubMocks.connect.mock.calls[0][1].onMessagePosted(message);
+      }
+      return result;
+    });
     vi.stubGlobal('fetch', fetchMock);
     const user = userEvent.setup();
     const view = render(<OperationsMap token="session-token" currentUser={owner} aircraft={aircraft} runs={runs} onUnauthorized={vi.fn()} />);
@@ -518,7 +599,9 @@ describe('OperationsMap', () => {
       method: 'POST',
       body: JSON.stringify({ message: 'Position checked.', share_type: 'LOCATION' }),
     })));
-    expect(await screen.findByText('Position checked.')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText('Message')).toHaveValue(''));
+    expect(screen.getAllByText('Position checked.')).toHaveLength(1);
+    expect(fetchMock.mock.calls.filter(([url, init]) => String(url).endsWith('/messages') && init?.method === 'POST')).toHaveLength(1);
 
     view.unmount();
     vi.stubGlobal('fetch', apiMock({ permissions: [] }));

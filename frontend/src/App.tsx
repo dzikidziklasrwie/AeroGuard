@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Icon } from './components/Icons';
 import { OperationsWorkspace } from './components/OperationsWorkspace';
 import { RunArchive } from './components/RunArchive';
@@ -47,6 +47,7 @@ const SUBSYSTEM_ICONS = {
 } as const;
 
 const EMPTY_TELEMETRY: TelemetryRecord[] = [];
+const EMPTY_RUNS: RunArchiveEntry[] = [];
 
 function dataFilePath(file: string): string {
   if (/^(?:https?:)?\//.test(file)) return file;
@@ -248,7 +249,7 @@ const Statistics = memo(function Statistics({ dataset }: { dataset: SimulationDa
   );
 });
 
-function ArchitectureOverview() {
+const ArchitectureOverview = memo(function ArchitectureOverview() {
   const stages = [
     { icon: 'database' as const, eyebrow: 'Input', title: 'Scenario config', text: 'Seeded, repeatable run parameters' },
     { icon: 'computer' as const, eyebrow: 'C++20', title: 'Health monitor', text: 'HAL, queues, validation and state machine' },
@@ -272,7 +273,7 @@ function ArchitectureOverview() {
       <div className="boundary-note"><Icon name="shield" /><p>AeroGuard uses fictional aircraft components and synthetic telemetry. It doesn't control aircraft or claim certification.</p></div>
     </section>
   );
-}
+});
 
 function DashboardSkeleton() {
   return <div className="loading-state" role="status" aria-live="polite"><span className="loader" /><div><strong>Loading recorded telemetry</strong><p>Validating JSONL schema and preparing replay…</p></div></div>;
@@ -281,10 +282,12 @@ function DashboardSkeleton() {
 export default function App() {
   const [manifestLoad, setManifestLoad] = useState<LoadState<ScenarioManifest>>({ status: 'loading' });
   const [archiveLoad, setArchiveLoad] = useState<LoadState<RunArchiveEntry[]>>({ status: 'loading' });
-  const [datasetLoad, setDatasetLoad] = useState<LoadState<SimulationDataset>>({ status: 'loading' });
+  const [loadedReplay, setLoadedReplay] = useState<(LoadState<SimulationDataset> & { path: string })>();
   const [selectedScenario, setSelectedScenario] = useState('');
   const [selectedRun, setSelectedRun] = useState<RunArchiveEntry>();
   const [manifestRetry, setManifestRetry] = useState(0);
+  const [replayVisible, setReplayVisible] = useState(true);
+  const replayPanelsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -327,22 +330,46 @@ export default function App() {
       final_state: selectedRun.final_state,
     } : manifestScenario,
   [manifestScenario, selectedRun]);
+  const replayPath = scenario ? dataFilePath(scenario.file) : undefined;
 
   useEffect(() => {
-    if (!scenario) return;
+    if (!replayPath) return;
     const controller = new AbortController();
-    fetchDataset(dataFilePath(scenario.file), controller.signal)
-      .then((dataset) => setDatasetLoad({ status: 'ready', value: dataset }))
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === 'AbortError') return;
-        setDatasetLoad({ status: 'error', message: error instanceof Error ? error.message : 'Unknown dataset error.' });
+    const { signal } = controller;
+    fetchDataset(replayPath, signal)
+      .then((dataset) => {
+        if (!signal.aborted) setLoadedReplay({ path: replayPath, status: 'ready', value: dataset });
+      }, (error: unknown) => {
+        if (!signal.aborted) {
+          setLoadedReplay({ path: replayPath, status: 'error', message: error instanceof Error ? error.message : 'Unknown dataset error.' });
+        }
       });
     return () => controller.abort();
-  }, [scenario]);
+  }, [replayPath]);
 
+  const datasetLoad = loadedReplay && loadedReplay.path === replayPath
+    ? loadedReplay
+    : { status: 'loading' as const };
   const dataset = datasetLoad.status === 'ready' ? datasetLoad.value : undefined;
   const durationMs = dataset?.metadata.duration_ms ?? 0;
-  const playback = usePlayback(durationMs, scenario?.file ?? selectedScenario);
+  const playback = usePlayback(durationMs, scenario?.file ?? selectedScenario, replayVisible);
+
+  useEffect(() => {
+    const panels = replayPanelsRef.current;
+    if (!panels || typeof IntersectionObserver === 'undefined') return;
+    let inViewport = true;
+    const updateVisibility = () => setReplayVisible(inViewport && !document.hidden);
+    const observer = new IntersectionObserver(([entry]) => {
+      inViewport = entry.isIntersecting;
+      updateVisibility();
+    }, { rootMargin: '160px 0px' });
+    observer.observe(panels);
+    document.addEventListener('visibilitychange', updateVisibility);
+    return () => {
+      observer.disconnect();
+      document.removeEventListener('visibilitychange', updateVisibility);
+    };
+  }, [dataset]);
 
   const replayView = useMemo(
     () => buildReplayView(dataset, playback.elapsedMs),
@@ -362,6 +389,11 @@ export default function App() {
   const downloadReport = useCallback(() => {
     if (dataset) downloadSimulationReport(dataset);
   }, [dataset]);
+
+  const openRecordedRun = useCallback((run: RunArchiveEntry) => {
+    setSelectedScenario(run.scenario);
+    setSelectedRun(run);
+  }, []);
 
   const selectedDescription = scenario?.description ?? dataset?.metadata.description;
   const artifactStatus = datasetLoad.status === 'ready'
@@ -414,7 +446,7 @@ export default function App() {
             <div><p className="section-kicker">Dataset unavailable</p><h2>AeroGuard couldn't load the scenario manifest</h2><p>{manifestLoad.message}</p><code>frontend/public/data/manifest.json</code></div>
             <button type="button" className="button primary-button" onClick={() => {
               setManifestLoad({ status: 'loading' });
-              setDatasetLoad({ status: 'loading' });
+              setLoadedReplay(undefined);
               setManifestRetry((value) => value + 1);
             }}>Try again</button>
           </section>
@@ -429,7 +461,6 @@ export default function App() {
                 <span>Public replay scenario</span>
                 <span className="select-wrap">
                   <select value={selectedScenario} onChange={(event) => {
-                    setDatasetLoad({ status: 'loading' });
                     setSelectedRun(undefined);
                     setSelectedScenario(event.target.value);
                   }}>
@@ -441,12 +472,8 @@ export default function App() {
 
             {archiveLoad.status === 'ready' && <RunArchive
               runs={archiveLoad.value}
-              activeReplayUrl={dataFilePath(scenario.file)}
-              onOpen={(run) => {
-                setDatasetLoad({ status: 'loading' });
-                setSelectedScenario(run.scenario);
-                setSelectedRun(run);
-              }}
+              activeReplayUrl={replayPath}
+              onOpen={openRecordedRun}
             />}
             {archiveLoad.status === 'error' && <p className="workspace-message error" role="status">Run archive unavailable: {archiveLoad.message}</p>}
 
@@ -456,7 +483,7 @@ export default function App() {
                 <div><p className="section-kicker">Replay unavailable</p><h2>AeroGuard couldn't load the JSONL artifact</h2><p>{datasetLoad.message}</p><code>{dataFilePath(scenario.file)}</code></div>
               </section>
             ) : dataset && (
-              <>
+              <div ref={replayPanelsRef}>
                 {dataset.warnings.length > 0 && <details className="warning-banner"><summary>{dataset.warnings.length} import warning{dataset.warnings.length === 1 ? '' : 's'}</summary><ul>{dataset.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul></details>}
                 <section className="health-hero" id="overview" aria-labelledby="overall-health-title">
                   <div className="health-copy">
@@ -512,11 +539,10 @@ export default function App() {
                   <Timeline records={timelineRecords} subsystems={subsystems} />
                 </div>
 
-                <Statistics dataset={dataset} />
-                <ArchitectureOverview />
-              </>
+              </div>
             )}
-            <OperationsWorkspace runs={archiveLoad.status === 'ready' ? archiveLoad.value : []} />
+            {dataset && <><Statistics dataset={dataset} /><ArchitectureOverview /></>}
+            <OperationsWorkspace runs={archiveLoad.status === 'ready' ? archiveLoad.value : EMPTY_RUNS} />
             <footer><span>AeroGuard</span><p>Avionics Health Monitoring Simulator - C++20 + ASP.NET Core + React</p><p>Portfolio engineering project</p></footer>
           </>
         )}

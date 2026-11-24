@@ -205,14 +205,23 @@ effect. The run chosen while placing or reconfiguring a flight affects only
 that aircraft.
 
 For an active flight, the `Change scenario for <tail number>` control changes
-only its recorded run and restarts that scenario. The API preserves the
-current position, destination, patrol scope, and speed. Optimistic concurrency
-rejects a stale selection instead of overwriting another user's change.
+only its recorded run and restarts that scenario. Its dark scenario menu opens
+below the control, identifies each run and duration, and marks the current
+choice. The API preserves the current position, destination, patrol scope, and
+speed. Optimistic concurrency rejects a stale selection instead of overwriting
+another user's change.
 
-Communication, invalid-sensor, power, multiple-failure, and recovery replays
-use distinct signal, warning, electrical, smoke, and recovery animations. The
-105-second overheating replay shows heat from 10 to 60 seconds, fire from 60
-to 80 seconds, airframe breakup, descending debris, and impact. Motion holds
+After applying a scenario, the map card shows when the save is in progress and
+how many seconds remain before the first scheduled effect. The replay starts
+from its recorded baseline, including the time before the fault appears.
+
+Communication loss uses three wide signal rings and a red disconnect mark.
+Invalid sensor data uses an amber warning. Power fluctuation sends bright arcs
+between pulsing nodes, while multiple failures combine smoke and fault pulses.
+Recovery uses a green wash, orbit, confirmation mark, and moving particles. The
+105-second overheating replay shows a heat halo and rising waves from 10 to 60
+seconds. Fire wraps around the aircraft from 60 to 80 seconds, with smoke and
+embers, before airframe breakup, descending debris, and impact. Motion holds
 at the breakup point for the rest of that replay cycle. Land shows an impact
 burst and wreckage. Water shows a splash and floating debris without a second
 explosion. These deterministic visuals are fictional presentation states, not

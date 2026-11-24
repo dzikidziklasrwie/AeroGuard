@@ -210,11 +210,24 @@ public sealed class ArchiveRepository
     public async Task<byte[]?> GetReplayAsync(
         long id,
         CancellationToken cancellationToken = default)
+        => await GetReplayAsync(id, expectedSourceSha256: null, cancellationToken);
+
+    public async Task<byte[]?> GetReplayAsync(
+        long id,
+        string? expectedSourceSha256,
+        CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionFactory.OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT replay_bytes FROM runs WHERE id = $id LIMIT 1;";
+        command.CommandText = expectedSourceSha256 is null
+            ? "SELECT replay_bytes FROM runs WHERE id = $id LIMIT 1;"
+            : "SELECT replay_bytes FROM runs WHERE id = $id AND source_sha256 = $source_sha256 LIMIT 1;";
         command.Parameters.AddWithValue("$id", id);
+        if (expectedSourceSha256 is not null)
+        {
+            command.Parameters.AddWithValue("$source_sha256", expectedSourceSha256);
+        }
+
         var result = await command.ExecuteScalarAsync(cancellationToken);
         return result as byte[];
     }

@@ -93,6 +93,15 @@ public sealed class ApiEndpointTests(AeroGuardApiFactory factory)
         Assert.Contains("\"record_type\":\"metadata\"", replay, StringComparison.Ordinal);
         Assert.Contains("\"record_type\":\"summary\"", replay, StringComparison.Ordinal);
         Assert.StartsWith("\"sha256-", replayResponse.Headers.ETag?.Tag, StringComparison.Ordinal);
+        Assert.True(replayResponse.Headers.CacheControl?.NoCache);
+
+        using var conditionalRequest = new HttpRequestMessage(HttpMethod.Get, $"/api/runs/{id}/replay");
+        conditionalRequest.Headers.IfNoneMatch.Add(replayResponse.Headers.ETag!);
+        using var unchanged = await _client.SendAsync(conditionalRequest, CancellationToken);
+
+        Assert.Equal(HttpStatusCode.NotModified, unchanged.StatusCode);
+        Assert.Equal(replayResponse.Headers.ETag, unchanged.Headers.ETag);
+        Assert.Empty(await unchanged.Content.ReadAsByteArrayAsync(CancellationToken));
     }
 
     [Fact]
