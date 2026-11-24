@@ -17,6 +17,12 @@ public sealed class OperationsConnectionRegistry(
 
     public bool HasConnections => !_connections.IsEmpty;
 
+    public IReadOnlyList<long> GetConnectedUserIds() =>
+        _connections.Values
+            .Select(connection => connection.UserId)
+            .Distinct()
+            .ToArray();
+
     public void Register(string connectionId, long userId, long sessionId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionId);

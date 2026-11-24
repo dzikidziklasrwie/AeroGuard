@@ -114,6 +114,7 @@ builder.Services.AddSingleton<AccountAdministrationService>();
 builder.Services.AddSingleton<BootstrapAdminService>();
 builder.Services.AddSingleton<AircraftService>();
 builder.Services.AddSingleton<OperationPermissionService>();
+builder.Services.AddSingleton<FlightTelemetryCache>();
 builder.Services.AddSingleton<FlightSnapshotFactory>();
 builder.Services.AddSingleton<OperationsBroadcaster>();
 builder.Services.AddSingleton<OperationsConnectionRegistry>();
